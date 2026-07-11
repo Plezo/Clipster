@@ -9,6 +9,7 @@ add_library(clipster_platform_win STATIC
   src/hotkey_manager.cpp
   src/audio_capture.cpp
   src/process_watcher.cpp
+  src/process_utils.cpp
   src/steam_locator.cpp
 )
 

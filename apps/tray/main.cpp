@@ -27,6 +27,7 @@
 #include "clipster/win/str_util.hpp"
 #include "clipster/win/wgc_capture.hpp"
 #include "clipster/win/window_finder.hpp"
+#include "audio_pipeline.hpp"
 #include "recorder.hpp"
 
 namespace {
@@ -72,6 +73,7 @@ struct Session {
   std::string game_name;
   std::unique_ptr<app::Recorder> recorder;
   std::unique_ptr<win::WgcCapture> capture;
+  std::unique_ptr<app::AudioPipeline> audio;  // may be null (audio failed)
 };
 std::mutex g_session_mutex;
 std::unique_ptr<Session> g_session;
@@ -217,6 +219,9 @@ void stop_session(bool game_exited) {
     return;
   }
   session->capture->stop();
+  if (session->audio) {
+    session->audio->stop();
+  }
   session->recorder->finish();
   log::info("session ended: {} ({})", session->game_name,
             game_exited ? "game exited" : "stopped");
@@ -258,7 +263,18 @@ void try_begin_capture() {
     show_balloon(L"Clipster", win::widen("Could not record " + game + ": " + error));
     return;
   }
+
+  std::string audio_error;
+  session->audio =
+      app::AudioPipeline::create(g_settings, session->pid, *session->recorder, &audio_error);
+  if (!session->audio) {
+    log::warn("recording without audio: {}", audio_error);
+  }
+
   session->capture->start();
+  if (session->audio) {
+    session->audio->start();
+  }
   log::info("recording {} (pid {})", game, session->pid);
   update_tooltip(win::widen("Clipster — recording " + game));
   show_balloon(L"Clipster", win::widen("Recording " + game + " — " +

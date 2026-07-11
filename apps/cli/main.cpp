@@ -24,6 +24,7 @@
 #include "clipster/win/known_folders.hpp"
 #include "clipster/win/wgc_capture.hpp"
 #include "clipster/win/window_finder.hpp"
+#include "audio_pipeline.hpp"
 #include "recorder.hpp"
 
 namespace {
@@ -129,6 +130,11 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  auto audio = app::AudioPipeline::create(settings, target->pid, recorder, &error);
+  if (!audio) {
+    log::warn("recording without audio: {}", error);
+  }
+
   win::HotkeyManager hotkeys;
   if (!hotkeys.register_hotkey(
           settings.hotkeys.save_clip, [&recorder] { recorder.save_clip(); }, &error)) {
@@ -144,6 +150,9 @@ int main(int argc, char** argv) {
       TRUE);
 
   capture->start();
+  if (audio) {
+    audio->start();
+  }
   log::info("recording — press {} to save the last {}s, Ctrl+C to quit",
             settings.hotkeys.save_clip, settings.clip.default_length_seconds);
 
@@ -155,6 +164,9 @@ int main(int argc, char** argv) {
   lock.unlock();
 
   capture->stop();
+  if (audio) {
+    audio->stop();
+  }
   hotkeys.stop();
   recorder.finish();  // let in-flight clip writes complete
   log::info("bye");

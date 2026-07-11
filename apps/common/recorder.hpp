@@ -38,6 +38,18 @@ class Recorder {
 
   void on_frame(const win::CapturedFrame& frame);
 
+  // --- audio (fed by AudioPipeline) ---
+  // The QPC-µs timestamp of the first captured video frame, or -1 until
+  // one arrives. Audio pts must be rebased against this so both streams
+  // share a timeline.
+  int64_t timeline_base_us() const {
+    return timeline_base_us_.load(std::memory_order_acquire);
+  }
+  // Call once, before audio packets start flowing.
+  void set_audio_info(AudioStreamInfo info);
+  // Thread-safe; pts already rebased to the shared timeline.
+  void push_audio_packet(EncodedPacket packet);
+
   void save_clip(std::chrono::seconds length);
   void save_clip();  // settings' default clip length
 
@@ -54,6 +66,9 @@ class Recorder {
   SegmentRingBuffer ring_;
   std::unique_ptr<media::VideoEncoder> encoder_;  // created on first frame
   std::atomic<bool> encoder_ready_{false};
+  AudioStreamInfo audio_info_;
+  std::atomic<bool> has_audio_{false};
+  std::atomic<int64_t> timeline_base_us_{-1};
   int64_t first_pts_us_ = -1;
   int64_t next_due_us_ = 0;
   const int64_t frame_interval_us_;

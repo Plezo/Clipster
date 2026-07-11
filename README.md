@@ -52,6 +52,10 @@ game session.
 Non-Steam games: add their install folders to *watched folders* or their
 `.exe` to *always record* in settings.
 
+**Audio** is captured per-application (Windows 10 2004+): record everything,
+the game only, the game plus chosen apps (default: Discord), or everything
+except chosen apps (e.g. Spotify) — pick the mode in Settings → Audio.
+
 Troubleshooting: the tray logs to `%APPDATA%\Clipster\clipster.log`. A
 CLI harness also exists for testing capture on any window:
 `clipster.exe --window "<title substring>"`.

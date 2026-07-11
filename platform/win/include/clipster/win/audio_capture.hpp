@@ -31,6 +31,10 @@ class DesktopLoopbackCapture {
   void start();
   void stop();
 
+  // The device mix format the chunks arrive in.
+  int sample_rate() const;
+  int channels() const;
+
  private:
   DesktopLoopbackCapture();
   struct Impl;

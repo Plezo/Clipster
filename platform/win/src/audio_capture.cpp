@@ -243,6 +243,8 @@ std::unique_ptr<DesktopLoopbackCapture> DesktopLoopbackCapture::create(AudioSink
 
 void DesktopLoopbackCapture::start() { impl_->engine.start(); }
 void DesktopLoopbackCapture::stop() { impl_->engine.stop(); }
+int DesktopLoopbackCapture::sample_rate() const { return impl_->engine.sample_rate; }
+int DesktopLoopbackCapture::channels() const { return impl_->engine.channels; }
 
 // --- ProcessLoopbackCapture --------------------------------------------------
 

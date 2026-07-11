@@ -44,6 +44,7 @@ Recorder::Recorder(Settings settings, std::string game_name, std::function<void(
 void Recorder::on_frame(const win::CapturedFrame& frame) {
   if (first_pts_us_ < 0) {
     first_pts_us_ = frame.timestamp_us;
+    timeline_base_us_.store(frame.timestamp_us, std::memory_order_release);
   }
   const int64_t pts = frame.timestamp_us - first_pts_us_;
 
@@ -80,6 +81,13 @@ void Recorder::on_frame(const win::CapturedFrame& frame) {
   frames_encoded_.fetch_add(1, std::memory_order_relaxed);
 }
 
+void Recorder::set_audio_info(AudioStreamInfo info) {
+  audio_info_ = std::move(info);
+  has_audio_.store(true, std::memory_order_release);
+}
+
+void Recorder::push_audio_packet(EncodedPacket packet) { ring_.push(std::move(packet)); }
+
 void Recorder::save_clip() {
   save_clip(std::chrono::seconds(settings_.clip.default_length_seconds));
 }
@@ -97,6 +105,9 @@ void Recorder::save_clip(std::chrono::seconds length) {
     return;
   }
   job.video = encoder_->stream_info();
+  if (has_audio_.load(std::memory_order_acquire)) {
+    job.audio = audio_info_;
+  }
   job.out_path = build_output_path();
 
   // Owned, not detached: finish() joins these before shutdown, so quitting

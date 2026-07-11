@@ -3,6 +3,8 @@
 
 add_library(clipster_app_common STATIC
   recorder.cpp
+  audio_mixer.cpp
+  audio_pipeline.cpp
 )
 
 target_include_directories(clipster_app_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
