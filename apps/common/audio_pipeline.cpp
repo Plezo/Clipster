@@ -24,6 +24,8 @@ struct AudioPipeline::Impl {
   std::vector<std::unique_ptr<win::ProcessLoopbackCapture>> process_captures;
   bool started = false;
   bool stopped = false;
+  bool offset_logged = false;
+  int64_t early_drops = 0;
 
   // Rebases a chunk onto the video timeline and encodes it. Drops audio
   // until the first video frame exists.
@@ -33,7 +35,17 @@ struct AudioPipeline::Impl {
       return;
     }
     const int64_t pts = qpc_us - base;
+    if (!offset_logged) {
+      offset_logged = true;
+      log::info("audio: first audio {} ms after video start", pts / 1000);
+    }
     if (pts < 0) {
+      // A few early chunks are normal; a stream of them means the device
+      // is reporting stream-relative instead of QPC timestamps.
+      if (++early_drops == 250) {
+        log::warn("audio: dropping many pre-video chunks — device timestamps look "
+                  "stream-relative; audio may be missing (please report this)");
+      }
       return;
     }
     encoder->encode(samples, frames, pts);
@@ -80,8 +92,16 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
     return im.encoder != nullptr;
   };
 
-  const auto direct_sink = [imp](const win::AudioChunk& c) {
-    imp->encode_on_timeline(c.samples, c.frame_count, c.timestamp_us);
+  // Every mode goes through the mixer, even single-source ones: WASAPI
+  // delivers nothing while the source is silent, and the wall-clock-paced
+  // mixer turns those delivery gaps into explicit silence. Feeding the
+  // encoder directly would splice silent periods out of the timeline and
+  // make audio drift ahead of video.
+  const auto make_mixer = [&](int rate, int channels) {
+    im.mixer = std::make_unique<AudioMixer>(
+        rate, channels, [imp](const float* samples, int frames, int64_t pts_qpc_us) {
+          imp->encode_on_timeline(samples, frames, pts_qpc_us);
+        });
   };
 
   if (mode == "desktop" || mode == "desktop_exclude") {
@@ -107,27 +127,35 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
       }
     }
 
+    const auto single_source_sink = [imp](const win::AudioChunk& c) {
+      imp->mixer->submit(0, c);
+    };
+
     std::string cap_error;
+    int in_rate = kRate;
+    int in_channels = kChannels;
     if (exclude_pid != 0) {
       auto cap = win::ProcessLoopbackCapture::create(
-          exclude_pid, win::ProcessLoopbackCapture::Mode::ExcludeTree, direct_sink, &cap_error);
+          exclude_pid, win::ProcessLoopbackCapture::Mode::ExcludeTree, single_source_sink,
+          &cap_error);
       if (!cap) {
         return fail("exclude capture failed: " + cap_error);
       }
-      if (!make_encoder(kRate, kChannels)) {
-        return fail("audio encoder failed");
-      }
       im.process_captures.push_back(std::move(cap));
     } else {
-      auto cap = win::DesktopLoopbackCapture::create(direct_sink, &cap_error);
+      auto cap = win::DesktopLoopbackCapture::create(single_source_sink, &cap_error);
       if (!cap) {
         return fail("desktop capture failed: " + cap_error);
       }
-      if (!make_encoder(cap->sample_rate(), cap->channels())) {
-        return fail("audio encoder failed");
-      }
+      in_rate = cap->sample_rate();
+      in_channels = cap->channels();  // swr downmixes 5.1/7.1 properly
       im.desktop_captures.push_back(std::move(cap));
     }
+    if (!make_encoder(in_rate, in_channels)) {
+      return fail("audio encoder failed");
+    }
+    make_mixer(in_rate, in_channels);
+    im.mixer->add_source();  // the captures above submit to source 0
     recorder.set_audio_info(im.encoder->stream_info());
     return pipeline;
   }
@@ -161,10 +189,7 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
   if (!make_encoder(kRate, kChannels)) {
     return fail("audio encoder failed");
   }
-  im.mixer = std::make_unique<AudioMixer>(
-      kRate, kChannels, [imp](const float* samples, int frames, int64_t pts_qpc_us) {
-        imp->encode_on_timeline(samples, frames, pts_qpc_us);
-      });
+  make_mixer(kRate, kChannels);
 
   for (const Target& target : targets) {
     const size_t source = im.mixer->add_source();

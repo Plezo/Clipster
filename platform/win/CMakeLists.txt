@@ -11,12 +11,13 @@ add_library(clipster_platform_win STATIC
   src/process_watcher.cpp
   src/process_utils.cpp
   src/steam_locator.cpp
+  src/gamepad_hotkey.cpp
 )
 
 target_include_directories(clipster_platform_win PUBLIC include)
 target_link_libraries(clipster_platform_win
   PUBLIC clipster_core
-  PRIVATE d3d11 dxgi windowsapp user32 shell32 ole32 mmdevapi advapi32
+  PRIVATE d3d11 dxgi windowsapp user32 shell32 ole32 mmdevapi advapi32 xinput9_1_0
 )
 
 # C++/WinRT generates coroutine-heavy headers; MSVC needs this for them.

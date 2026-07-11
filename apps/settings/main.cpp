@@ -7,8 +7,8 @@
 
 #include <mmsystem.h>
 
-#include <cstdlib>
 #include <filesystem>
+#include <functional>
 
 #include "clipster/settings.hpp"
 
@@ -17,8 +17,9 @@ using clipster::Settings;
 namespace {
 
 std::filesystem::path settings_path() {
-  const wchar_t* appdata = _wgetenv(L"APPDATA");
-  return std::filesystem::path(appdata ? appdata : L".") / L"Clipster" / L"settings.json";
+  const QString appdata = qEnvironmentVariable("APPDATA");
+  return std::filesystem::path(appdata.isEmpty() ? L"." : appdata.toStdWString()) / L"Clipster" /
+         L"settings.json";
 }
 
 QStringList to_qstringlist(const std::vector<std::string>& v) {
@@ -271,7 +272,18 @@ class SettingsDialog : public QDialog {
 
     hotkey_ = new QKeySequenceEdit(
         QKeySequence(QString::fromStdString(settings_.hotkeys.save_clip)));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    hotkey_->setMaximumSequenceLength(1);  // the global hotkey is one chord
+#endif
     form->addRow(tr("Save clip hotkey:"), hotkey_);
+
+    controller_ = new QLineEdit(
+        QString::fromStdString(settings_.hotkeys.controller_save_clip));
+    controller_->setPlaceholderText(tr("e.g. Back+RB (empty = disabled)"));
+    form->addRow(tr("Controller combo:"), controller_);
+    auto* pad_hint = new QLabel(tr("Buttons: A B X Y LB RB LS RS Back Start DpadUp/Down/Left/Right"));
+    pad_hint->setStyleSheet("color: gray");
+    form->addRow(QString(), pad_hint);
 
     sound_ = new QCheckBox(tr("Play a sound when a clip is saved"));
     sound_->setChecked(settings_.notifications.sound_enabled);
@@ -325,10 +337,14 @@ class SettingsDialog : public QDialog {
     settings_.games.manual_exes = from_list_widget(exes_list_);
     settings_.games.ignored_exes = from_list_widget(ignored_list_);
 
-    const QString combo = hotkey_->keySequence().toString(QKeySequence::PortableText);
-    if (!combo.isEmpty()) {
-      settings_.hotkeys.save_clip = combo.toStdString();
+    const QKeySequence seq = hotkey_->keySequence();
+    if (!seq.isEmpty()) {
+      // Keep only the first chord — the Win32 hotkey backend cannot
+      // represent multi-chord sequences like "Ctrl+K, Ctrl+D".
+      settings_.hotkeys.save_clip =
+          QKeySequence(seq[0]).toString(QKeySequence::PortableText).toStdString();
     }
+    settings_.hotkeys.controller_save_clip = controller_->text().trimmed().toStdString();
     settings_.notifications.sound_enabled = sound_->isChecked();
     settings_.notifications.sound_file = sound_file_->text().trimmed().toStdString();
 
@@ -364,6 +380,7 @@ class SettingsDialog : public QDialog {
   QListWidget* exes_list_ = nullptr;
   QListWidget* ignored_list_ = nullptr;
   QKeySequenceEdit* hotkey_ = nullptr;
+  QLineEdit* controller_ = nullptr;
   QCheckBox* sound_ = nullptr;
   QLineEdit* sound_file_ = nullptr;
 };

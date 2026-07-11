@@ -20,6 +20,7 @@
 #include "clipster/game_matcher.hpp"
 #include "clipster/logging.hpp"
 #include "clipster/settings.hpp"
+#include "clipster/win/gamepad_hotkey.hpp"
 #include "clipster/win/hotkey_manager.hpp"
 #include "clipster/win/known_folders.hpp"
 #include "clipster/win/process_watcher.hpp"
@@ -61,6 +62,7 @@ std::filesystem::file_time_type g_settings_mtime{};
 // Read by the watcher thread, atomically swapped on settings reload.
 std::atomic<std::shared_ptr<const GameMatcher>> g_matcher;
 std::unique_ptr<win::HotkeyManager> g_hotkeys;
+std::unique_ptr<win::GamepadHotkey> g_gamepad;
 HWND g_hwnd = nullptr;
 
 std::mutex g_events_mutex;
@@ -163,20 +165,27 @@ std::shared_ptr<const GameMatcher> build_matcher(const Settings& settings) {
   return std::make_shared<const GameMatcher>(std::move(cfg));
 }
 
-void register_save_hotkey() {
+void register_save_hotkeys() {
+  const auto save = [] {
+    std::lock_guard lock(g_session_mutex);
+    if (g_session) {
+      g_session->recorder->save_clip();
+    }
+  };
+
   g_hotkeys = std::make_unique<win::HotkeyManager>();
   std::string error;
-  if (!g_hotkeys->register_hotkey(
-          g_settings.hotkeys.save_clip,
-          [] {
-            std::lock_guard lock(g_session_mutex);
-            if (g_session) {
-              g_session->recorder->save_clip();
-            }
-          },
-          &error)) {
+  if (!g_hotkeys->register_hotkey(g_settings.hotkeys.save_clip, save, &error)) {
     log::error("{}", error);
     show_balloon(L"Clipster", win::widen("Hotkey unavailable: " + error));
+  }
+
+  g_gamepad.reset();
+  if (!g_settings.hotkeys.controller_save_clip.empty()) {
+    g_gamepad = win::GamepadHotkey::create(g_settings.hotkeys.controller_save_clip, save, &error);
+    if (!g_gamepad) {
+      log::warn("{}", error);
+    }
   }
 }
 
@@ -198,11 +207,13 @@ void reload_settings_if_changed() {
     log::warn("{}", warning);
     return;  // keep the last good settings
   }
-  const bool hotkey_changed = fresh.hotkeys.save_clip != g_settings.hotkeys.save_clip;
+  const bool hotkeys_changed =
+      fresh.hotkeys.save_clip != g_settings.hotkeys.save_clip ||
+      fresh.hotkeys.controller_save_clip != g_settings.hotkeys.controller_save_clip;
   g_settings = std::move(fresh);
   g_matcher.store(build_matcher(g_settings));
-  if (hotkey_changed) {
-    register_save_hotkey();
+  if (hotkeys_changed) {
+    register_save_hotkeys();
   }
   log::info("settings reloaded (recording settings apply to the next game session)");
 }
@@ -495,8 +506,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
   wcsncpy_s(g_nid.szTip, L"Clipster — waiting for a game", _TRUNCATE);
   Shell_NotifyIconW(NIM_ADD, &g_nid);
 
-  // Global hotkey (works over fullscreen games).
-  register_save_hotkey();
+  // Global hotkey (works over fullscreen games) + controller combo.
+  register_save_hotkeys();
 
   // Pick up saves from the settings UI (or hand edits) automatically.
   SetTimer(g_hwnd, kSettingsWatchTimer, 3000, nullptr);
@@ -525,6 +536,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
   watcher.stop();
   if (g_hotkeys) {
     g_hotkeys->stop();
+  }
+  if (g_gamepad) {
+    g_gamepad->stop();
   }
   stop_session(/*game_exited=*/false);
   log::info("--- clipster-tray exiting ---");
