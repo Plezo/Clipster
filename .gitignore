@@ -1,0 +1,20 @@
+# Build output
+build/
+out/
+cmake-build-*/
+
+# vcpkg
+vcpkg_installed/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+
+# Local CMake overrides
+CMakeUserPresets.json
+
+# OS noise
+Thumbs.db
+.DS_Store

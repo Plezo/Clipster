@@ -1,0 +1,31 @@
+{
+  "name": "clipster",
+  "version": "0.1.0",
+  "description": "Lightweight background game replay buffer - clip the last N seconds on a hotkey",
+  "dependencies": [
+    "nlohmann-json",
+    {
+      "name": "qtbase",
+      "platform": "windows"
+    },
+    {
+      "name": "ffmpeg",
+      "default-features": false,
+      "features": [
+        "avcodec",
+        "avformat",
+        "swresample",
+        "swscale",
+        "openh264",
+        {
+          "name": "nvcodec",
+          "platform": "windows | linux"
+        },
+        {
+          "name": "amf",
+          "platform": "windows"
+        }
+      ]
+    }
+  ]
+}
