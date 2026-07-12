@@ -41,6 +41,11 @@ class WgcCapture {
   WgcCapture(const WgcCapture&) = delete;
   WgcCapture& operator=(const WgcCapture&) = delete;
 
+  // Invoked (from a WinRT worker thread) when the captured window is
+  // destroyed — e.g. a splash screen replaced by the real game window.
+  // Set before start().
+  void set_on_closed(std::function<void()> callback);
+
   void start();
   void stop();
 

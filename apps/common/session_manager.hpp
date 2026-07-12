@@ -11,6 +11,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "audio_pipeline.hpp"
 #include "clipster/game_matcher.hpp"
@@ -54,22 +55,34 @@ class SessionManager {
 
  private:
   struct Event {
-    enum class Kind { GameStarted, GameStopped, EncoderFailed } kind;
+    enum class Kind { GameStarted, GameStopped, EncoderFailed, WindowClosed } kind;
     DWORD pid = 0;
     std::string exe_path;
   };
 
   struct Session {
     DWORD pid = 0;
+    std::string exe_path;
     std::string game_name;
     std::unique_ptr<Recorder> recorder;
     std::unique_ptr<win::WgcCapture> capture;
     std::unique_ptr<AudioPipeline> audio;  // may be null
   };
 
+  // A matched game process that has not shown a window yet. Games often
+  // launch through windowless bootstrap exes (Unreal's ReadyOrNot.exe
+  // spawns ReadyOrNotSteam-Win64-Shipping.exe), so several candidates can
+  // be pending at once — whichever produces a window first wins.
+  struct Candidate {
+    DWORD pid = 0;
+    std::string exe_path;
+    std::chrono::steady_clock::time_point deadline;
+  };
+
   void post_event(Event event);
   void control_loop();
   void handle_event(const Event& event);
+  void add_candidate(DWORD pid, std::string exe_path);
   void try_begin_capture();
   void stop_session(bool game_exited);
   Settings settings_copy() const;
@@ -85,9 +98,7 @@ class SessionManager {
   std::unique_ptr<Session> session_;
 
   // Control thread state (touched only on the control thread).
-  DWORD pending_pid_ = 0;
-  std::string pending_exe_;
-  std::chrono::steady_clock::time_point pending_deadline_{};
+  std::vector<Candidate> candidates_;
 
   std::mutex events_mutex_;
   std::condition_variable events_cv_;

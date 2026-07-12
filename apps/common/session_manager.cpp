@@ -146,7 +146,7 @@ void SessionManager::control_loop() {
       handle_event(event);
       lock.lock();
     }
-    if (pending_pid_ != 0) {
+    if (!candidates_.empty()) {
       lock.unlock();
       try_begin_capture();
       lock.lock();
@@ -154,6 +154,16 @@ void SessionManager::control_loop() {
   }
   lock.unlock();
   CoUninitialize();
+}
+
+void SessionManager::add_candidate(DWORD pid, std::string exe_path) {
+  for (const Candidate& c : candidates_) {
+    if (c.pid == pid) {
+      return;
+    }
+  }
+  candidates_.push_back(
+      {pid, std::move(exe_path), std::chrono::steady_clock::now() + kFindWindowTimeout});
 }
 
 void SessionManager::handle_event(const Event& event) {
@@ -165,21 +175,13 @@ void SessionManager::handle_event(const Event& event) {
           return;  // already recording something
         }
       }
-      if (pending_pid_ != 0) {
-        return;  // already waiting on a launching game
-      }
       log::info("game detected: {}", event.exe_path);
-      pending_pid_ = event.pid;
-      pending_exe_ = event.exe_path;
-      pending_deadline_ = std::chrono::steady_clock::now() + kFindWindowTimeout;
+      add_candidate(event.pid, event.exe_path);
       try_begin_capture();  // the window may already exist
       break;
     }
     case Event::Kind::GameStopped: {
-      if (pending_pid_ == event.pid) {
-        pending_pid_ = 0;
-        return;
-      }
+      std::erase_if(candidates_, [&](const Candidate& c) { return c.pid == event.pid; });
       bool ours = false;
       {
         std::lock_guard lock(session_mutex_);
@@ -197,32 +199,61 @@ void SessionManager::handle_event(const Event& event) {
       }
       break;
     }
+    case Event::Kind::WindowClosed: {
+      // Splash screens and launcher windows get destroyed and replaced by
+      // the real game window: tear down and re-queue the process so we
+      // attach to whatever it shows next.
+      std::string exe;
+      {
+        std::lock_guard lock(session_mutex_);
+        if (!session_ || session_->pid != event.pid) {
+          return;  // stale notification from a previous session
+        }
+        exe = session_->exe_path;
+      }
+      log::info("capture window closed; waiting for a new window from {}", exe);
+      stop_session(/*game_exited=*/false);
+      add_candidate(event.pid, exe);  // GameStopped will clear it if the process died
+      break;
+    }
   }
 }
 
 void SessionManager::try_begin_capture() {
-  const auto window = win::find_window_by_pid(pending_pid_);
-  if (!window) {
-    if (std::chrono::steady_clock::now() > pending_deadline_) {
-      log::warn("{} never showed a window — giving up", pending_exe_);
-      pending_pid_ = 0;
+  const auto now = std::chrono::steady_clock::now();
+  std::erase_if(candidates_, [&](const Candidate& c) {
+    if (now <= c.deadline) {
+      return false;
     }
+    log::warn("{} never showed a window — giving up", c.exe_path);
+    return true;
+  });
+
+  DWORD pid = 0;
+  std::string exe;
+  std::optional<win::WindowInfo> window;
+  for (const Candidate& c : candidates_) {
+    if ((window = win::find_window_by_pid(c.pid))) {
+      pid = c.pid;
+      exe = c.exe_path;
+      break;
+    }
+  }
+  if (!window) {
     return;
   }
+  candidates_.clear();  // the winner takes the session; siblings were helpers
 
   const Settings settings = settings_copy();
-  const std::string game =
-      std::filesystem::path(pending_exe_).stem().string();
+  const std::string game = std::filesystem::path(exe).stem().string();
 
   auto session = std::make_unique<Session>();
-  session->pid = pending_pid_;
+  session->pid = pid;
+  session->exe_path = exe;
   session->game_name = game;
   session->recorder = std::make_unique<Recorder>(
       settings, game,
-      [this, pid = pending_pid_, exe = pending_exe_] {
-        post_event({Event::Kind::EncoderFailed, pid, exe});
-      });
-  pending_pid_ = 0;
+      [this, pid, exe] { post_event({Event::Kind::EncoderFailed, pid, exe}); });
 
   std::string error;
   auto* recorder = session->recorder.get();
@@ -236,6 +267,8 @@ void SessionManager::try_begin_capture() {
     }
     return;
   }
+  session->capture->set_on_closed(
+      [this, pid, exe] { post_event({Event::Kind::WindowClosed, pid, exe}); });
 
   std::string audio_error;
   session->audio = AudioPipeline::create(settings, session->pid, *recorder, &audio_error);

@@ -35,6 +35,8 @@ struct WgcCapture::Impl {
   winrt_wgc::Direct3D11CaptureFramePool frame_pool{nullptr};
   winrt_wgc::GraphicsCaptureSession session{nullptr};
   winrt_wgc::Direct3D11CaptureFramePool::FrameArrived_revoker frame_arrived;
+  winrt_wgc::GraphicsCaptureItem::Closed_revoker item_closed;
+  std::function<void()> on_closed;
 
   winrt::com_ptr<ID3D11Texture2D> staging;
   D3D11_TEXTURE2D_DESC staging_desc{};
@@ -123,7 +125,26 @@ std::unique_ptr<WgcCapture> WgcCapture::create_for_window(HWND hwnd, FrameSink s
         }
       });
 
+  im.item_closed =
+      im.item.Closed(winrt::auto_revoke, [impl = cap->impl_.get()](const auto&, const auto&) {
+        std::function<void()> callback;
+        {
+          std::lock_guard lock(impl->frame_mutex);
+          if (impl->running) {
+            callback = impl->on_closed;
+          }
+        }
+        if (callback) {
+          callback();
+        }
+      });
+
   return cap;
+}
+
+void WgcCapture::set_on_closed(std::function<void()> callback) {
+  std::lock_guard lock(impl_->frame_mutex);
+  impl_->on_closed = std::move(callback);
 }
 
 void WgcCapture::Impl::on_frame(const winrt_wgc::Direct3D11CaptureFrame& frame) {
@@ -265,6 +286,7 @@ void WgcCapture::stop() {
     impl_->running = false;
   }
   impl_->frame_arrived.revoke();
+  impl_->item_closed.revoke();
   if (impl_->session) {
     impl_->session.Close();
   }
