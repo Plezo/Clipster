@@ -59,9 +59,12 @@ Non-Steam games: add their install folders to *watched folders* or their
 the game only, the game plus chosen apps (default: Discord), or everything
 except chosen apps (e.g. Spotify) — pick the mode in Settings → Audio.
 
-Troubleshooting: Clipster logs to `%APPDATA%\Clipster\clipster.log`. A
-CLI harness also exists for testing capture on any window:
-`clipster-cli.exe --window "<title substring>"`.
+Troubleshooting: Clipster logs to `%APPDATA%\Clipster\clipster.log`. If
+the hotkey works on the desktop but not in a specific game, that game is
+probably running as administrator — run Clipster as administrator too
+(Windows withholds input from elevated windows otherwise). The controller
+combo is unaffected by this. A CLI harness also exists for testing
+capture on any window: `clipster-cli.exe --window "<title substring>"`.
 
 ## How it works / contributing
 

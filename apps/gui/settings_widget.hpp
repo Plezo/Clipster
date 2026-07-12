@@ -27,6 +27,7 @@ class SettingsWidget : public QWidget {
   QSpinBox* bitrate_ = nullptr;
   QComboBox* codec_ = nullptr;
   QSpinBox* buffer_ = nullptr;
+  QCheckBox* capture_frame_ = nullptr;
   QLabel* ram_label_ = nullptr;
   QLineEdit* save_dir_ = nullptr;
   QCheckBox* subfolder_ = nullptr;

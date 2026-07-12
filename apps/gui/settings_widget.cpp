@@ -118,6 +118,10 @@ QWidget* SettingsWidget::build_recording_tab() {
   buffer_->setValue(initial_.recording.buffer_seconds);
   form->addRow(tr("Replay buffer length:"), buffer_);
 
+  capture_frame_ = new QCheckBox(tr("Include window title bar and borders (windowed games)"));
+  capture_frame_->setChecked(initial_.recording.capture_window_frame);
+  form->addRow(QString(), capture_frame_);
+
   ram_label_ = new QLabel;
   ram_label_->setStyleSheet("color: gray");
   form->addRow(QString(), ram_label_);
@@ -304,6 +308,7 @@ Settings SettingsWidget::collect() const {
   s.recording.bitrate_kbps = bitrate_->value() * 1000;
   s.recording.codec = codec_->currentData().toString().toStdString();
   s.recording.buffer_seconds = buffer_->value();
+  s.recording.capture_window_frame = capture_frame_->isChecked();
 
   s.output.save_dir = save_dir_->text().trimmed().toStdString();
   s.output.filename_template = template_->text().toStdString();

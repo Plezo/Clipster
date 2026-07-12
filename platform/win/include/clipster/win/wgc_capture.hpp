@@ -30,8 +30,12 @@ class WgcCapture {
   using FrameSink = std::function<void(const CapturedFrame&)>;
 
   static bool is_supported();
+  // With client_area_only (the default), frames are cropped to the
+  // window's client area so windowed games record without the title bar
+  // and borders.
   static std::unique_ptr<WgcCapture> create_for_window(HWND hwnd, FrameSink sink,
-                                                       std::string* error);
+                                                       std::string* error,
+                                                       bool client_area_only = true);
   ~WgcCapture();
 
   WgcCapture(const WgcCapture&) = delete;

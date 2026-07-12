@@ -2,13 +2,14 @@
 
 #include <windows.h>
 
+#include <atomic>
 #include <cstdlib>
-#include <deque>
 #include <future>
 #include <map>
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <vector>
 
 #include "clipster/logging.hpp"
 #include "clipster/util.hpp"
@@ -18,7 +19,7 @@ namespace clipster::win {
 namespace {
 
 struct ParsedCombo {
-  UINT modifiers = 0;
+  UINT modifiers = 0;  // MOD_CONTROL / MOD_ALT / MOD_SHIFT / MOD_WIN
   UINT vk = 0;
 };
 
@@ -64,7 +65,6 @@ std::optional<ParsedCombo> parse_combo(const std::string& combo) {
       end = lowered.size();
     }
     std::string token = lowered.substr(start, end - start);
-    // trim spaces
     while (!token.empty() && token.front() == ' ') token.erase(token.begin());
     while (!token.empty() && token.back() == ' ') token.pop_back();
 
@@ -97,54 +97,94 @@ std::optional<ParsedCombo> parse_combo(const std::string& combo) {
   return out;
 }
 
+bool key_down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
+
+// Exact modifier match: the combo fires only when precisely the requested
+// modifier classes are held, so Ctrl+Del does not fire during Ctrl+Alt+Del.
+bool modifiers_match(UINT wanted) {
+  return key_down(VK_CONTROL) == ((wanted & MOD_CONTROL) != 0) &&
+         key_down(VK_MENU) == ((wanted & MOD_ALT) != 0) &&
+         key_down(VK_SHIFT) == ((wanted & MOD_SHIFT) != 0) &&
+         (key_down(VK_LWIN) || key_down(VK_RWIN)) == ((wanted & MOD_WIN) != 0);
+}
+
 }  // namespace
 
 bool is_valid_hotkey_combo(const std::string& combo) { return parse_combo(combo).has_value(); }
 
+// Implementation: a WH_KEYBOARD_LL low-level keyboard hook instead of
+// RegisterHotKey. RegisterHotKey is starved by fullscreen games that use
+// raw input, and fails outright when another app owns the combo; the
+// low-level hook sees every keystroke first (the approach used by OBS,
+// Discord, etc.). The hook callback only posts a message so the hook
+// chain is never delayed. Limitation (shared with RegisterHotKey): input
+// destined for an elevated window is not delivered to a non-elevated
+// Clipster — run Clipster as administrator if the game runs elevated.
 struct HotkeyManager::Impl {
-  struct Request {
+  struct Def {
     ParsedCombo combo;
     Callback callback;
-    std::promise<bool> done;
+    bool held = false;  // suppress auto-repeat while the combo stays down
   };
 
+  std::mutex mutex;
+  std::vector<Def> defs;
   std::thread thread;
   DWORD thread_id = 0;
   std::shared_future<void> ready;
-  std::mutex mutex;
-  std::deque<Request> requests;
-  std::map<int, Callback> callbacks;  // hotkey id -> action
-  int next_id = 1;
   bool stopped = false;
 
+  // The LL hook procedure has no context parameter; managers are created
+  // one at a time (frontends replace theirs on settings changes), so a
+  // process-wide current-instance pointer is sufficient.
+  static std::atomic<Impl*> current;
+
+  static LRESULT CALLBACK hook_proc(int code, WPARAM wparam, LPARAM lparam) {
+    if (code == HC_ACTION) {
+      Impl* self = current.load(std::memory_order_acquire);
+      if (self) {
+        const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lparam);
+        const bool down = wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN;
+        const bool up = wparam == WM_KEYUP || wparam == WM_SYSKEYUP;
+        std::lock_guard lock(self->mutex);
+        for (size_t i = 0; i < self->defs.size(); ++i) {
+          Def& def = self->defs[i];
+          if (info->vkCode != def.combo.vk) {
+            continue;
+          }
+          if (up) {
+            def.held = false;
+          } else if (down && !def.held && modifiers_match(def.combo.modifiers)) {
+            def.held = true;
+            // Fire from the message loop; the hook must return quickly.
+            PostThreadMessageW(self->thread_id, WM_APP, i, 0);
+          }
+        }
+      }
+    }
+    return CallNextHookEx(nullptr, code, wparam, lparam);
+  }
+
   void thread_main(std::promise<void> ready_promise) {
-    // Force-create the message queue before signalling readiness so
-    // PostThreadMessage from other threads cannot be lost.
     MSG msg;
-    PeekMessageW(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+    PeekMessageW(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);  // force-create the queue
     thread_id = GetCurrentThreadId();
+
+    HHOOK hook = SetWindowsHookExW(WH_KEYBOARD_LL, &hook_proc, GetModuleHandleW(nullptr), 0);
+    if (!hook) {
+      log::error("hotkeys: SetWindowsHookEx failed ({})", GetLastError());
+    }
+    current.store(this, std::memory_order_release);
     ready_promise.set_value();
 
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
       if (msg.message == WM_APP) {
-        std::lock_guard lock(mutex);
-        while (!requests.empty()) {
-          Request req = std::move(requests.front());
-          requests.pop_front();
-          const int id = next_id++;
-          if (RegisterHotKey(nullptr, id, req.combo.modifiers | MOD_NOREPEAT, req.combo.vk)) {
-            callbacks[id] = std::move(req.callback);
-            req.done.set_value(true);
-          } else {
-            req.done.set_value(false);
-          }
-        }
-      } else if (msg.message == WM_HOTKEY) {
         Callback cb;
         {
           std::lock_guard lock(mutex);
-          if (auto it = callbacks.find(static_cast<int>(msg.wParam)); it != callbacks.end()) {
-            cb = it->second;
+          const size_t index = msg.wParam;
+          if (index < defs.size()) {
+            cb = defs[index].callback;
           }
         }
         if (cb) {
@@ -153,20 +193,14 @@ struct HotkeyManager::Impl {
       }
     }
 
-    std::lock_guard lock(mutex);
-    // A registration racing with stop() may have queued a request that the
-    // loop never saw (WM_QUIT drains first) — fail it so the caller's
-    // future.get() cannot block forever.
-    while (!requests.empty()) {
-      requests.front().done.set_value(false);
-      requests.pop_front();
+    current.store(nullptr, std::memory_order_release);
+    if (hook) {
+      UnhookWindowsHookEx(hook);
     }
-    for (const auto& [id, cb] : callbacks) {
-      UnregisterHotKey(nullptr, id);
-    }
-    callbacks.clear();
   }
 };
+
+std::atomic<HotkeyManager::Impl*> HotkeyManager::Impl::current{nullptr};
 
 HotkeyManager::HotkeyManager() : impl_(std::make_unique<Impl>()) {
   std::promise<void> ready_promise;
@@ -183,31 +217,16 @@ bool HotkeyManager::register_hotkey(const std::string& combo, Callback callback,
     if (error) *error = "cannot parse hotkey '" + combo + "'";
     return false;
   }
-
   impl_->ready.wait();
-  std::future<bool> done;
   {
     std::lock_guard lock(impl_->mutex);
     if (impl_->stopped) {
       if (error) *error = "hotkey manager stopped";
       return false;
     }
-    Impl::Request req;
-    req.combo = *parsed;
-    req.callback = std::move(callback);
-    done = req.done.get_future();
-    impl_->requests.push_back(std::move(req));
+    impl_->defs.push_back({*parsed, std::move(callback), false});
   }
-  PostThreadMessageW(impl_->thread_id, WM_APP, 0, 0);
-
-  if (!done.get()) {
-    if (error) {
-      *error = "RegisterHotKey failed for '" + combo +
-               "' — the combination is probably taken by another application";
-    }
-    return false;
-  }
-  log::info("hotkeys: registered {}", combo);
+  log::info("hotkeys: watching {}", combo);
   return true;
 }
 

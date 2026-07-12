@@ -11,9 +11,11 @@
 #include <windows.graphics.directx.direct3d11.interop.h>
 
 #include <d3d11.h>
+#include <dwmapi.h>
 #include <dxgi1_2.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <mutex>
 
 #include "clipster/logging.hpp"
@@ -41,8 +43,15 @@ struct WgcCapture::Impl {
   FrameSink sink;
   std::mutex frame_mutex;
   bool running = false;
+  HWND hwnd = nullptr;
+  bool client_area_only = true;
 
   void on_frame(const winrt_wgc::Direct3D11CaptureFrame& frame);
+
+  // Offset and size of the window's client area within the captured
+  // texture, in physical pixels. Returns false if it cannot be computed
+  // (capture then falls back to the full window).
+  bool client_crop(int content_w, int content_h, int* off_x, int* off_y, int* w, int* h) const;
 };
 
 WgcCapture::WgcCapture() : impl_(std::make_unique<Impl>()) {}
@@ -52,7 +61,8 @@ WgcCapture::~WgcCapture() { stop(); }
 bool WgcCapture::is_supported() { return winrt_wgc::GraphicsCaptureSession::IsSupported(); }
 
 std::unique_ptr<WgcCapture> WgcCapture::create_for_window(HWND hwnd, FrameSink sink,
-                                                          std::string* error) {
+                                                          std::string* error,
+                                                          bool client_area_only) {
   auto fail = [&](const std::string& msg) -> std::unique_ptr<WgcCapture> {
     if (error) *error = msg;
     return nullptr;
@@ -65,6 +75,8 @@ std::unique_ptr<WgcCapture> WgcCapture::create_for_window(HWND hwnd, FrameSink s
   auto cap = std::unique_ptr<WgcCapture>(new WgcCapture());
   Impl& im = *cap->impl_;
   im.sink = std::move(sink);
+  im.hwnd = hwnd;
+  im.client_area_only = client_area_only;
 
   UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
   if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, nullptr, 0,
@@ -165,15 +177,74 @@ void WgcCapture::Impl::on_frame(const winrt_wgc::Direct3D11CaptureFrame& frame) 
   }
 
   CapturedFrame out;
-  out.data = static_cast<const uint8_t*>(mapped.pData);
   out.width = std::min<int>(content_size.Width, static_cast<int>(desc.Width));
   out.height = std::min<int>(content_size.Height, static_cast<int>(desc.Height));
   out.stride = static_cast<int>(mapped.RowPitch);
+
+  int off_x = 0;
+  int off_y = 0;
+  if (client_area_only) {
+    int cw = 0;
+    int ch = 0;
+    if (client_crop(out.width, out.height, &off_x, &off_y, &cw, &ch)) {
+      out.width = cw;
+      out.height = ch;
+    } else {
+      off_x = off_y = 0;
+    }
+  }
+  out.data = static_cast<const uint8_t*>(mapped.pData) +
+             static_cast<size_t>(off_y) * out.stride + static_cast<size_t>(off_x) * 4;
   // SystemRelativeTime is QPC-based, in 100 ns ticks.
   out.timestamp_us = frame.SystemRelativeTime().count() / 10;
   sink(out);
 
   d3d_context->Unmap(staging.get(), 0);
+}
+
+bool WgcCapture::Impl::client_crop(int content_w, int content_h, int* off_x, int* off_y, int* w,
+                                   int* h) const {
+  // The rect queries must see physical pixels regardless of process DPI
+  // awareness, or the crop lands in the wrong place on scaled displays.
+  const DPI_AWARENESS_CONTEXT prev =
+      SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+  RECT window_rect{};
+  RECT client_rect{};
+  POINT client_origin{0, 0};
+  const bool ok = GetWindowRect(hwnd, &window_rect) && GetClientRect(hwnd, &client_rect) &&
+                  ClientToScreen(hwnd, &client_origin);
+  RECT ext_rect{};
+  const bool have_ext = SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS,
+                                                        &ext_rect, sizeof(ext_rect)));
+  SetThreadDpiAwarenessContext(prev);
+  if (!ok || client_rect.right <= 0 || client_rect.bottom <= 0) {
+    return false;
+  }
+
+  // The captured texture may correspond to the raw window rect (with
+  // invisible resize borders) or to the DWM visible bounds, depending on
+  // the OS build; pick whichever matches the captured size best.
+  RECT base = window_rect;
+  if (have_ext) {
+    const int wr_w = window_rect.right - window_rect.left;
+    const int ext_w = ext_rect.right - ext_rect.left;
+    if (std::abs(ext_w - content_w) < std::abs(wr_w - content_w)) {
+      base = ext_rect;
+    }
+  }
+
+  const int x = std::clamp<int>(client_origin.x - base.left, 0, content_w);
+  const int y = std::clamp<int>(client_origin.y - base.top, 0, content_h);
+  const int cw = std::min<int>(client_rect.right, content_w - x);
+  const int ch = std::min<int>(client_rect.bottom, content_h - y);
+  if (cw < 16 || ch < 16) {
+    return false;  // degenerate (minimized or mid-resize) — keep full frame
+  }
+  *off_x = x;
+  *off_y = y;
+  *w = cw;
+  *h = ch;
+  return true;
 }
 
 void WgcCapture::start() {

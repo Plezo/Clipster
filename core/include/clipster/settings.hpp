@@ -15,6 +15,9 @@ struct RecordingSettings {
   // Sliding window length. RAM cost is roughly
   // buffer_seconds * bitrate_kbps / 8 KB (120 s @ 20 Mbps ~= 300 MB).
   int buffer_seconds = 120;
+  // Windowed games: false (default) crops recording to the game surface;
+  // true keeps the title bar and borders in frame.
+  bool capture_window_frame = false;
 };
 
 struct OutputSettings {

@@ -6,10 +6,13 @@
 
 namespace clipster::win {
 
-// System-wide hotkeys via RegisterHotKey — these fire even while a
-// fullscreen game has focus. Combos are strings like "Ctrl+Alt+F10" or
-// "Ctrl+Shift+S" so they can live in settings.json and, later, a UI
-// key-capture widget.
+// System-wide hotkeys via a low-level keyboard hook — these fire even
+// while a fullscreen game with raw input has focus, and cannot conflict
+// with combos owned by other applications. Combos are strings like
+// "Ctrl+Del" or "Ctrl+Shift+S" so they can live in settings.json and the
+// settings UI. Known limitation: if the foreground app runs elevated and
+// Clipster does not, Windows withholds the input (run Clipster as admin
+// in that case).
 //
 // Callbacks run on the manager's internal message-loop thread; keep them
 // short (signal the real work, don't do it there).
@@ -23,8 +26,7 @@ class HotkeyManager {
   HotkeyManager(const HotkeyManager&) = delete;
   HotkeyManager& operator=(const HotkeyManager&) = delete;
 
-  // False if the combo cannot be parsed or the OS rejected it (usually
-  // because another application already owns it).
+  // False only if the combo cannot be parsed.
   bool register_hotkey(const std::string& combo, Callback callback, std::string* error);
 
   void stop();

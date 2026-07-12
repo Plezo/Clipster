@@ -42,7 +42,8 @@ static json to_json(const Settings& s) {
        {{"fps", s.recording.fps},
         {"bitrate_kbps", s.recording.bitrate_kbps},
         {"codec", s.recording.codec},
-        {"buffer_seconds", s.recording.buffer_seconds}}},
+        {"buffer_seconds", s.recording.buffer_seconds},
+        {"capture_window_frame", s.recording.capture_window_frame}}},
       {"output",
        {{"save_dir", s.output.save_dir},
         {"filename_template", s.output.filename_template},
@@ -82,6 +83,7 @@ static void from_json(const json& j, Settings& s) {
     read(*it, "bitrate_kbps", s.recording.bitrate_kbps);
     read(*it, "codec", s.recording.codec);
     read(*it, "buffer_seconds", s.recording.buffer_seconds);
+    read(*it, "capture_window_frame", s.recording.capture_window_frame);
   }
   if (auto it = j.find("output"); it != j.end() && it->is_object()) {
     read(*it, "save_dir", s.output.save_dir);

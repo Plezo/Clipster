@@ -227,7 +227,8 @@ void SessionManager::try_begin_capture() {
   std::string error;
   auto* recorder = session->recorder.get();
   session->capture = win::WgcCapture::create_for_window(
-      window->hwnd, [recorder](const win::CapturedFrame& f) { recorder->on_frame(f); }, &error);
+      window->hwnd, [recorder](const win::CapturedFrame& f) { recorder->on_frame(f); }, &error,
+      /*client_area_only=*/!settings.recording.capture_window_frame);
   if (!session->capture) {
     log::error("cannot capture {}: {}", game, error);
     if (callbacks_.on_error) {
