@@ -12,9 +12,6 @@ struct RecordingSettings {
   // "auto" probes hardware encoders (NVENC -> AMF -> QSV) and falls back to
   // software. "h264" / "hevc" force a codec family.
   std::string codec = "auto";
-  // Sliding window length. RAM cost is roughly
-  // buffer_seconds * bitrate_kbps / 8 KB (120 s @ 20 Mbps ~= 300 MB).
-  int buffer_seconds = 120;
 };
 
 struct OutputSettings {
@@ -26,10 +23,10 @@ struct OutputSettings {
 };
 
 struct ClipSettings {
-  // Seconds of the buffer written out when the hotkey fires.
+  // Seconds saved when the hotkey fires. This is also the replay window
+  // kept in RAM (cost ≈ seconds * bitrate_kbps / 8 KB: 30 s @ 20 Mbps
+  // ~= 75 MB), so one number answers "how far back can I clip?".
   int default_length_seconds = 30;
-  // Extra lengths offered in the UI / bindable to their own hotkeys later.
-  std::vector<int> quick_lengths{15, 30, 60, 120};
 };
 
 // How audio sources are selected while a game session is active.

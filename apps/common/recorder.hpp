@@ -54,10 +54,10 @@ class Recorder {
   void save_clip(std::chrono::seconds length);
   void save_clip();  // settings' default clip length
 
-  // Applies the live-tunable subset mid-session: buffer length, clip
-  // length, output location/template, notification sound. Encoder
-  // parameters (fps/bitrate/codec/audio mode) stay fixed until the next
-  // session. Thread-safe.
+  // Applies the live-tunable subset mid-session: clip length (which also
+  // resizes the ring buffer), output location/template, notification
+  // sound. Encoder parameters (fps/bitrate/codec/audio mode) stay fixed
+  // until the next session. Thread-safe.
   void update_live_settings(const Settings& settings);
 
   void finish();

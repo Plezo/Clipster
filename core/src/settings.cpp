@@ -41,14 +41,11 @@ static json to_json(const Settings& s) {
       {"recording",
        {{"fps", s.recording.fps},
         {"bitrate_kbps", s.recording.bitrate_kbps},
-        {"codec", s.recording.codec},
-        {"buffer_seconds", s.recording.buffer_seconds}}},
+        {"codec", s.recording.codec}}},
       {"output",
        {{"save_dir", s.output.save_dir},
         {"filename_template", s.output.filename_template}}},
-      {"clip",
-       {{"default_length_seconds", s.clip.default_length_seconds},
-        {"quick_lengths", s.clip.quick_lengths}}},
+      {"clip", {{"default_length_seconds", s.clip.default_length_seconds}}},
       {"audio",
        {{"mode", s.audio.mode},
         {"include_game", s.audio.include_game},
@@ -79,7 +76,6 @@ static void from_json(const json& j, Settings& s) {
     read(*it, "fps", s.recording.fps);
     read(*it, "bitrate_kbps", s.recording.bitrate_kbps);
     read(*it, "codec", s.recording.codec);
-    read(*it, "buffer_seconds", s.recording.buffer_seconds);
   }
   if (auto it = j.find("output"); it != j.end() && it->is_object()) {
     read(*it, "save_dir", s.output.save_dir);
@@ -87,7 +83,6 @@ static void from_json(const json& j, Settings& s) {
   }
   if (auto it = j.find("clip"); it != j.end() && it->is_object()) {
     read(*it, "default_length_seconds", s.clip.default_length_seconds);
-    read(*it, "quick_lengths", s.clip.quick_lengths);
   }
   if (auto it = j.find("audio"); it != j.end() && it->is_object()) {
     read(*it, "mode", s.audio.mode);
@@ -122,16 +117,12 @@ static void from_json(const json& j, Settings& s) {
 void Settings::clamp() {
   recording.fps = std::clamp(recording.fps, 15, 240);
   recording.bitrate_kbps = std::clamp(recording.bitrate_kbps, 1000, 150000);
-  recording.buffer_seconds = std::clamp(recording.buffer_seconds, 5, 600);
   if (recording.codec != "auto" && recording.codec != "h264" && recording.codec != "hevc") {
     log::warn("settings: unknown codec '{}', using 'auto'", recording.codec);
     recording.codec = "auto";
   }
 
-  clip.default_length_seconds =
-      std::clamp(clip.default_length_seconds, 5, recording.buffer_seconds);
-  std::erase_if(clip.quick_lengths,
-                [&](int l) { return l < 5 || l > recording.buffer_seconds; });
+  clip.default_length_seconds = std::clamp(clip.default_length_seconds, 5, 600);
 
   const auto& modes = AudioSettings::valid_modes();
   if (std::find(modes.begin(), modes.end(), audio.mode) == modes.end()) {

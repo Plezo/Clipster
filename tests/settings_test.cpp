@@ -8,7 +8,7 @@ TEST(settings_defaults_are_sane) {
   Settings s;
   s.clamp();
   CHECK_EQ(s.recording.fps, 60);
-  CHECK_EQ(s.recording.buffer_seconds, 120);
+  CHECK_EQ(s.clip.default_length_seconds, 30);
   CHECK_EQ(s.audio.mode, "include_list");
   CHECK(s.audio.include_game);
   CHECK_EQ(s.audio.include_apps.size(), 1u);
@@ -58,13 +58,12 @@ TEST(settings_wrong_types_fall_back_to_defaults) {
 
 TEST(settings_out_of_range_values_are_clamped) {
   const Settings s = Settings::from_json_string(
-      R"({"recording": {"fps": 999, "bitrate_kbps": 5, "buffer_seconds": 100000},
+      R"({"recording": {"fps": 999, "bitrate_kbps": 5},
           "clip": {"default_length_seconds": 100000},
           "audio": {"mode": "telepathy", "sample_rate": 1234}})");
   CHECK_EQ(s.recording.fps, 240);
   CHECK_EQ(s.recording.bitrate_kbps, 1000);
-  CHECK_EQ(s.recording.buffer_seconds, 600);
-  CHECK_EQ(s.clip.default_length_seconds, 600);  // clamped to buffer length
+  CHECK_EQ(s.clip.default_length_seconds, 600);
   CHECK_EQ(s.audio.mode, "desktop");
   CHECK_EQ(s.audio.sample_rate, 48000);
 }

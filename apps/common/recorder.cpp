@@ -38,7 +38,7 @@ Recorder::Recorder(Settings settings, std::string game_name, std::function<void(
     : settings_(std::move(settings)),
       game_name_(std::move(game_name)),
       on_fatal_(std::move(on_fatal)),
-      ring_(std::chrono::seconds(settings_.recording.buffer_seconds)),
+      ring_(std::chrono::seconds(settings_.clip.default_length_seconds)),
       frame_interval_us_(1'000'000 / settings_.recording.fps) {}
 
 void Recorder::on_frame(const win::CapturedFrame& frame) {
@@ -102,12 +102,11 @@ Settings Recorder::settings_copy() const {
 void Recorder::update_live_settings(const Settings& settings) {
   {
     std::lock_guard lock(settings_mutex_);
-    settings_.recording.buffer_seconds = settings.recording.buffer_seconds;
     settings_.clip = settings.clip;
     settings_.output = settings.output;
     settings_.notifications = settings.notifications;
   }
-  ring_.set_capacity(std::chrono::seconds(settings.recording.buffer_seconds));
+  ring_.set_capacity(std::chrono::seconds(settings.clip.default_length_seconds));
 }
 
 void Recorder::save_clip() {

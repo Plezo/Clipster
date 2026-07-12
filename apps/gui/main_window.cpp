@@ -243,7 +243,7 @@ void MainWindow::apply_settings() {
   register_hotkeys();
   win::set_autostart(autostart_->isChecked(), L"--minimized");
   statusBar()->showMessage(
-      tr("Settings saved — buffer, clip length, hotkeys and sounds apply now; "
+      tr("Settings saved — clip length, hotkeys and sounds apply now; "
          "quality and audio sources at the next game"),
       6000);
 }

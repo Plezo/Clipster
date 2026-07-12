@@ -114,21 +114,24 @@ QWidget* SettingsWidget::build_recording_tab() {
       std::max(0, codec_->findData(QString::fromStdString(initial_.recording.codec))));
   form->addRow(tr("Codec:"), codec_);
 
-  buffer_ = new QSpinBox;
-  buffer_->setRange(5, 600);
-  buffer_->setSuffix(tr(" s"));
-  buffer_->setValue(initial_.recording.buffer_seconds);
-  form->addRow(tr("Replay buffer length:"), buffer_);
+  clip_len_ = new QSpinBox;
+  clip_len_->setRange(5, 600);
+  clip_len_->setSuffix(tr(" s"));
+  clip_len_->setValue(initial_.clip.default_length_seconds);
+  clip_len_->setToolTip(
+      tr("How far back a clip reaches. Clipster keeps exactly this much "
+         "gameplay in memory at all times."));
+  form->addRow(tr("Clip length:"), clip_len_);
 
   ram_label_ = new QLabel;
   ram_label_->setStyleSheet("color: gray");
   form->addRow(QString(), ram_label_);
 
   const auto update_ram = [this] {
-    const double mb = double(buffer_->value()) * bitrate_->value() * 1000.0 / 8.0 / 1024.0;
+    const double mb = double(clip_len_->value()) * bitrate_->value() * 1000.0 / 8.0 / 1024.0;
     ram_label_->setText(tr("≈ %1 MB of RAM while recording").arg(qRound(mb)));
   };
-  connect(buffer_, &QSpinBox::valueChanged, this, update_ram);
+  connect(clip_len_, &QSpinBox::valueChanged, this, update_ram);
   connect(bitrate_, &QSpinBox::valueChanged, this, update_ram);
   update_ram();
   return page;
@@ -178,12 +181,6 @@ QWidget* SettingsWidget::build_output_tab() {
   };
   connect(template_, &QLineEdit::textChanged, this, update_example);
   update_example();
-
-  clip_len_ = new QSpinBox;
-  clip_len_->setRange(5, 600);
-  clip_len_->setSuffix(tr(" s"));
-  clip_len_->setValue(initial_.clip.default_length_seconds);
-  form->addRow(tr("Clip length (seconds saved per press):"), clip_len_);
   return page;
 }
 
@@ -354,11 +351,10 @@ Settings SettingsWidget::collect() const {
   s.recording.fps = fps_->currentData().toInt();
   s.recording.bitrate_kbps = bitrate_->value() * 1000;
   s.recording.codec = codec_->currentData().toString().toStdString();
-  s.recording.buffer_seconds = buffer_->value();
+  s.clip.default_length_seconds = clip_len_->value();
 
   s.output.save_dir = save_dir_->text().trimmed().toStdString();
   s.output.filename_template = template_->text().toStdString();
-  s.clip.default_length_seconds = clip_len_->value();
 
   s.audio.mode = audio_mode_->currentData().toString().toStdString();
   s.audio.include_apps = from_list_widget(include_list_);

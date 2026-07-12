@@ -26,12 +26,11 @@ class SettingsWidget : public QWidget {
   QComboBox* fps_ = nullptr;
   QSpinBox* bitrate_ = nullptr;
   QComboBox* codec_ = nullptr;
-  QSpinBox* buffer_ = nullptr;
+  QSpinBox* clip_len_ = nullptr;
   QLabel* ram_label_ = nullptr;
   QLineEdit* save_dir_ = nullptr;
   QLineEdit* template_ = nullptr;
   QLabel* template_example_ = nullptr;
-  QSpinBox* clip_len_ = nullptr;
   QComboBox* audio_mode_ = nullptr;
   QGroupBox* include_group_ = nullptr;
   QGroupBox* exclude_group_ = nullptr;

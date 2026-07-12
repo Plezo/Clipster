@@ -9,7 +9,13 @@ Nothing is written to disk until you clip: video is hardware-encoded
 (NVENC/AMF/QuickSync) into a rolling in-memory buffer, and a clip is a
 millisecond-fast remux of that buffer — no re-encoding, no quality loss.
 
-## Build
+## Download
+
+Grab the latest `Clipster-*-windows-x64.zip` from the
+[Releases page](../../releases), unzip anywhere, run `Clipster.exe`.
+No installer needed.
+
+## Build from source
 
 Prerequisites (one-time):
 
@@ -46,9 +52,10 @@ Closing the window minimizes Clipster to the system tray so it keeps
 recording in the background; tick *Start with Windows* in Settings and
 you never have to think about it again.
 
-Settings cover the hotkey and controller combo, clip length, buffer
-length, fps/bitrate/codec, save location, filename template, audio mode,
-watched game folders, extra/ignored executables, and sounds. (They are
+Settings cover the hotkey and controller combo, clip length (which is
+also how much gameplay is kept in memory), fps/bitrate/codec, save
+location, filename template, audio mode, microphone, watched game
+folders, extra/ignored executables, and sounds. (They are
 stored in `%APPDATA%\Clipster\settings.json` if you prefer a text
 editor.) Recording settings apply to the next game session.
 
@@ -71,7 +78,7 @@ capture on any window: `clipster-cli.exe --window "<title substring>"`.
 Capture is Windows.Graphics.Capture (injection-free, anticheat-friendly),
 encoding is your GPU's hardware encoder via FFmpeg's libavcodec, and the
 sliding window is a GOP-aligned ring buffer of already-encoded packets —
-RAM cost ≈ `buffer_seconds × bitrate / 8` (120 s @ 20 Mbps ≈ 300 MB).
+RAM cost ≈ `clip_seconds × bitrate / 8` (30 s @ 20 Mbps ≈ 75 MB).
 Layout: `core/` (platform-agnostic logic, unit-tested), `media/` (FFmpeg),
 `platform/win/` (WGC/WASAPI/hotkeys), `apps/` (tray, settings UI, CLI).
 See `CLAUDE.md` for developer docs. Core tests run anywhere:
