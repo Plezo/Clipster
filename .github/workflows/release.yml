@@ -23,7 +23,9 @@ jobs:
         with:
           repository: microsoft/vcpkg
           path: vcpkg
-          fetch-depth: 1
+          # Pinned to a commit verified to build this manifest (keep in sync
+          # with ci.yml). Bump deliberately, not implicitly.
+          ref: f87344cac03158cbf1467264565f1fd36b382a24
 
       - name: Bootstrap vcpkg
         run: ${{ github.workspace }}/vcpkg/bootstrap-vcpkg.bat
@@ -33,11 +35,20 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            for (const v of ['ACTIONS_CACHE_URL', 'ACTIONS_RESULTS_URL', 'ACTIONS_RUNTIME_TOKEN'])
+              core.exportVariable(v, process.env[v] || '');
 
+      # --clean-after-build keeps the runner disk from filling up (see ci.yml).
       - name: Configure
-        run: cmake --preset windows
+        run: cmake --preset windows -D "VCPKG_INSTALL_OPTIONS=--clean-after-build"
+
+      - name: Upload dependency build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcpkg-failure-logs
+          path: vcpkg/buildtrees/**/*.log
+          if-no-files-found: ignore
 
       - name: Build
         run: cmake --build --preset windows-release --parallel
