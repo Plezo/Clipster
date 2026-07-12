@@ -65,7 +65,6 @@ jobs:
         with:
           name: clipster-windows-x64
           path: |
-            build/windows/apps/cli/RelWithDebInfo/clipster.exe
-            build/windows/apps/tray/RelWithDebInfo/clipster-tray.exe
-            build/windows/apps/settings/RelWithDebInfo/clipster-settings.exe
+            build/windows/apps/gui/RelWithDebInfo/Clipster.exe
+            build/windows/apps/cli/RelWithDebInfo/clipster-cli.exe
           if-no-files-found: error

@@ -12,6 +12,7 @@ add_library(clipster_platform_win STATIC
   src/process_utils.cpp
   src/steam_locator.cpp
   src/gamepad_hotkey.cpp
+  src/autostart.cpp
 )
 
 target_include_directories(clipster_platform_win PUBLIC include)

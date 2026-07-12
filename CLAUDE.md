@@ -43,11 +43,14 @@ g++ -std=c++20 -Wall -Wextra -Wpedantic -Icore/include -I<json-include> -Itests 
 - `platform/win/` — WGC capture, WASAPI audio (desktop loopback + per-process
   loopback), global hotkeys, process watcher, Steam locator. All UTF-8 at the
   API surface (`win::widen`/`narrow` at Win32 boundaries).
-- `apps/common/` — `Recorder`: the engine shared by frontends.
-- `apps/tray/` — `clipster-tray.exe`, the real product (WIN32 subsystem,
-  logs to `%APPDATA%\Clipster\clipster.log`).
-- `apps/settings/` — Qt Widgets settings editor; tray hot-reloads the file.
-- `apps/cli/` — dev/test harness.
+- `apps/common/` — the engine shared by frontends: `Recorder` (video ring
+  buffer + clip writing), `AudioPipeline`/`AudioMixer` (per-app WASAPI ->
+  AAC), `SessionManager` (game detection -> session lifecycle on its own
+  control thread; UI-agnostic callbacks).
+- `apps/gui/` — `Clipster.exe`, the product: Qt main window (status,
+  recent clips, settings pages) hosting the engine; minimizes to tray,
+  `--minimized` for autostart, logs to `%APPDATA%\Clipster\clipster.log`.
+- `apps/cli/` — `clipster-cli.exe`, dev/test harness.
 
 Settings live at `%APPDATA%\Clipster\settings.json`, shared by all frontends.
 

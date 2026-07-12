@@ -29,25 +29,28 @@ Everything lands in `build\windows\apps\<app>\RelWithDebInfo\`.
 
 ## Use
 
-Run **`clipster-tray.exe`** (from `build\windows\apps\tray\RelWithDebInfo\`,
-or copy that whole folder somewhere permanent, e.g.
-`%LOCALAPPDATA%\Programs\Clipster`). An icon appears in the system tray:
+Run **`Clipster.exe`** (from `build\windows\apps\gui\RelWithDebInfo\`, or
+copy that whole folder somewhere permanent, e.g.
+`%LOCALAPPDATA%\Programs\Clipster`). The main window shows live recording
+status and your recent clips; the Settings page has everything else:
 
-1. **Launch a game.** Steam libraries are detected automatically; Clipster
-   starts recording and shows a notification.
-2. **Something cool happens → press `Ctrl+Del`.** The last 30 seconds
-   (configurable) are saved to `Videos\Clipster\<Game>\` with a chime.
+1. **Launch a game.** Steam libraries are detected automatically; the
+   status flips to "● Recording" with live buffer stats.
+2. **Something cool happens → press `Ctrl+Del`** (or `Back+RB` on a
+   controller, or the Save clip button). The last 30 seconds
+   (configurable) are saved to `Videos\Clipster\<Game>\` with a chime,
+   and appear in the recent-clips list — double-click to play.
 3. **Quit the game.** Recording stops and the buffer is freed.
 
-Right-click the tray icon for: Save clip · Settings · Open clips folder ·
-Start with Windows · Quit. Double-click opens the clips folder.
+Closing the window minimizes Clipster to the system tray so it keeps
+recording in the background; tick *Start with Windows* in Settings and
+you never have to think about it again.
 
-Configuration lives in a friendly UI (`clipster-settings.exe`, also on the
-tray menu) or directly in `%APPDATA%\Clipster\settings.json` — hotkey,
-clip length, buffer length, fps/bitrate/codec, save location, filename
-template, watched game folders, extra/ignored executables, sounds. The
-tray picks up changes automatically; recording settings apply to the next
-game session.
+Settings cover the hotkey and controller combo, clip length, buffer
+length, fps/bitrate/codec, save location, filename template, audio mode,
+watched game folders, extra/ignored executables, and sounds. (They are
+stored in `%APPDATA%\Clipster\settings.json` if you prefer a text
+editor.) Recording settings apply to the next game session.
 
 Non-Steam games: add their install folders to *watched folders* or their
 `.exe` to *always record* in settings.
@@ -56,9 +59,9 @@ Non-Steam games: add their install folders to *watched folders* or their
 the game only, the game plus chosen apps (default: Discord), or everything
 except chosen apps (e.g. Spotify) — pick the mode in Settings → Audio.
 
-Troubleshooting: the tray logs to `%APPDATA%\Clipster\clipster.log`. A
+Troubleshooting: Clipster logs to `%APPDATA%\Clipster\clipster.log`. A
 CLI harness also exists for testing capture on any window:
-`clipster.exe --window "<title substring>"`.
+`clipster-cli.exe --window "<title substring>"`.
 
 ## How it works / contributing
 
