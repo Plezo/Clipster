@@ -53,13 +53,22 @@ class Recorder {
   void save_clip(std::chrono::seconds length);
   void save_clip();  // settings' default clip length
 
+  // Applies the live-tunable subset mid-session: buffer length, clip
+  // length, output location/template, notification sound. Encoder
+  // parameters (fps/bitrate/codec/audio mode) stay fixed until the next
+  // session. Thread-safe.
+  void update_live_settings(const Settings& settings);
+
   void finish();
 
   std::string stats();
 
  private:
-  std::filesystem::path build_output_path() const;
+  std::filesystem::path build_output_path(const Settings& settings) const;
 
+  Settings settings_copy() const;
+
+  mutable std::mutex settings_mutex_;
   Settings settings_;
   std::string game_name_;
   std::function<void()> on_fatal_;

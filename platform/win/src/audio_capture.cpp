@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <thread>
 #include <vector>
@@ -33,6 +34,11 @@ struct CaptureEngine {
   int channels = 0;
   int sample_rate = 0;
   bool samples_are_int16 = false;
+  // The process-loopback virtual device reports unreliable QPC positions
+  // (zero or stream-relative on many builds), which would misplace audio
+  // on the shared timeline. Stamp by arrival time instead — steady_clock
+  // is QPC-based, the same clock video capture uses.
+  bool use_arrival_timestamps = false;
 
   AudioSink sink;
   std::thread thread;
@@ -110,7 +116,14 @@ struct CaptureEngine {
         chunk.frame_count = static_cast<int>(frames);
         chunk.channels = channels;
         chunk.sample_rate = sample_rate;
-        chunk.timestamp_us = static_cast<int64_t>(qpc_100ns / 10);
+        if (use_arrival_timestamps || qpc_100ns == 0) {
+          const int64_t now_us = std::chrono::duration_cast<std::chrono::microseconds>(
+                                     std::chrono::steady_clock::now().time_since_epoch())
+                                     .count();
+          chunk.timestamp_us = now_us - static_cast<int64_t>(frames) * 1'000'000 / sample_rate;
+        } else {
+          chunk.timestamp_us = static_cast<int64_t>(qpc_100ns / 10);
+        }
         sink(chunk);
 
         capture->ReleaseBuffer(frames);
@@ -417,6 +430,7 @@ std::unique_ptr<ProcessLoopbackCapture> ProcessLoopbackCapture::create(DWORD pid
   eng.channels = wf.nChannels;
   eng.sample_rate = static_cast<int>(wf.nSamplesPerSec);
   eng.samples_are_int16 = false;
+  eng.use_arrival_timestamps = true;  // see CaptureEngine comment
 
   if (FAILED(eng.client->Initialize(
           AUDCLNT_SHAREMODE_SHARED,

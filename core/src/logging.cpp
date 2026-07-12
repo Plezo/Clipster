@@ -5,6 +5,10 @@
 #include <cstdio>
 #include <mutex>
 
+#ifdef _WIN32
+#include <share.h>
+#endif
+
 namespace clipster::log {
 
 namespace {
@@ -33,10 +37,9 @@ void set_level(Level level) { g_level.store(level, std::memory_order_relaxed); }
 
 bool set_file(const std::filesystem::path& path) {
 #ifdef _WIN32
-  std::FILE* f = nullptr;
-  if (_wfopen_s(&f, path.c_str(), L"ab") != 0) {
-    f = nullptr;
-  }
+  // _wfopen_s denies sharing, which would lock the log against Notepad
+  // (and the developer) while the app runs; _wfsopen lets readers in.
+  std::FILE* f = _wfsopen(path.c_str(), L"ab", _SH_DENYNO);
 #else
   std::FILE* f = std::fopen(path.c_str(), "ab");
 #endif

@@ -58,12 +58,13 @@ void Recorder::on_frame(const win::CapturedFrame& frame) {
   }
 
   if (!encoder_) {
+    const Settings settings = settings_copy();
     media::VideoEncoderConfig cfg;
     cfg.width = frame.width;
     cfg.height = frame.height;
-    cfg.fps = settings_.recording.fps;
-    cfg.bitrate_kbps = settings_.recording.bitrate_kbps;
-    cfg.codec = settings_.recording.codec;
+    cfg.fps = settings.recording.fps;
+    cfg.bitrate_kbps = settings.recording.bitrate_kbps;
+    cfg.codec = settings.recording.codec;
     std::string error;
     encoder_ = media::VideoEncoder::create(
         cfg, [this](EncodedPacket pkt) { ring_.push(std::move(pkt)); }, &error);
@@ -88,8 +89,24 @@ void Recorder::set_audio_info(AudioStreamInfo info) {
 
 void Recorder::push_audio_packet(EncodedPacket packet) { ring_.push(std::move(packet)); }
 
+Settings Recorder::settings_copy() const {
+  std::lock_guard lock(settings_mutex_);
+  return settings_;
+}
+
+void Recorder::update_live_settings(const Settings& settings) {
+  {
+    std::lock_guard lock(settings_mutex_);
+    settings_.recording.buffer_seconds = settings.recording.buffer_seconds;
+    settings_.clip = settings.clip;
+    settings_.output = settings.output;
+    settings_.notifications = settings.notifications;
+  }
+  ring_.set_capacity(std::chrono::seconds(settings.recording.buffer_seconds));
+}
+
 void Recorder::save_clip() {
-  save_clip(std::chrono::seconds(settings_.clip.default_length_seconds));
+  save_clip(std::chrono::seconds(settings_copy().clip.default_length_seconds));
 }
 
 void Recorder::save_clip(std::chrono::seconds length) {
@@ -97,6 +114,7 @@ void Recorder::save_clip(std::chrono::seconds length) {
     log::warn("no frames captured yet — nothing to clip");
     return;
   }
+  const Settings settings = settings_copy();
 
   media::ClipJob job;
   job.packets = ring_.snapshot(length);
@@ -108,12 +126,12 @@ void Recorder::save_clip(std::chrono::seconds length) {
   if (has_audio_.load(std::memory_order_acquire)) {
     job.audio = audio_info_;
   }
-  job.out_path = build_output_path();
+  job.out_path = build_output_path(settings);
 
   // Owned, not detached: finish() joins these before shutdown, so quitting
   // mid-write cannot race static destruction or truncate the clip.
   std::lock_guard lock(writers_mutex_);
-  writers_.emplace_back([job = std::move(job), settings = settings_] {
+  writers_.emplace_back([job = std::move(job), settings] {
     std::string error;
     if (media::write_clip(job, &error)) {
       log::info("clip saved: {}", job.out_path.string());
@@ -143,11 +161,11 @@ std::string Recorder::stats() {
                      frames_encoded_.load(std::memory_order_relaxed));
 }
 
-std::filesystem::path Recorder::build_output_path() const {
-  std::filesystem::path dir = settings_.output.save_dir.empty()
+std::filesystem::path Recorder::build_output_path(const Settings& settings) const {
+  std::filesystem::path dir = settings.output.save_dir.empty()
                                   ? win::default_save_dir()
-                                  : std::filesystem::path(settings_.output.save_dir);
-  if (settings_.output.subfolder_per_game) {
+                                  : std::filesystem::path(settings.output.save_dir);
+  if (settings.output.subfolder_per_game) {
     dir /= util::sanitize_filename(game_name_);
   }
   std::error_code ec;
@@ -158,7 +176,7 @@ std::filesystem::path Recorder::build_output_path() const {
   std::tm tm{};
   localtime_s(&tm, &t);
   const std::string name = util::expand_template(
-      settings_.output.filename_template,
+      settings.output.filename_template,
       {{"game", game_name_},
        {"date", std::format("{:04}-{:02}-{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday)},
        {"time", std::format("{:02}-{:02}-{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)}});

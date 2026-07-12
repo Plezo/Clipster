@@ -7,6 +7,7 @@ add_executable(clipster_gui WIN32
   main.cpp
   main_window.cpp
   settings_widget.cpp
+  clipster.rc
 )
 
 set_target_properties(clipster_gui PROPERTIES OUTPUT_NAME "Clipster")

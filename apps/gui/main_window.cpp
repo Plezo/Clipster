@@ -6,6 +6,7 @@
 #include "clipster/logging.hpp"
 #include "clipster/win/autostart.hpp"
 #include "clipster/win/known_folders.hpp"
+#include "recorder.hpp"
 
 namespace clipster::gui {
 
@@ -13,6 +14,13 @@ MainWindow::MainWindow(Settings settings, std::filesystem::path settings_path)
     : settings_(std::move(settings)), settings_path_(std::move(settings_path)) {
   setWindowTitle(tr("Clipster"));
   resize(760, 560);
+
+  const auto logo_path = app::executable_dir() / L"assets" / L"logo.png";
+  app_icon_ = QIcon(QString::fromStdWString(logo_path.wstring()));
+  if (app_icon_.isNull() || app_icon_.availableSizes().isEmpty()) {
+    app_icon_ = dot_icon(QColor(130, 130, 130));
+  }
+  setWindowIcon(app_icon_);
 
   auto* tabs = new QTabWidget;
   tabs->addTab(build_home_page(), tr("Home"));
@@ -104,6 +112,10 @@ QWidget* MainWindow::build_home_page() {
   stats_label_->setStyleSheet("color: gray");
   layout->addWidget(stats_label_);
 
+  hotkey_label_ = new QLabel;
+  hotkey_label_->setStyleSheet("color: gray");
+  layout->addWidget(hotkey_label_);
+
   auto* buttons = new QHBoxLayout;
   save_clip_btn_ = new QPushButton(tr("Save clip"));
   save_clip_btn_->setMinimumHeight(36);
@@ -155,7 +167,7 @@ QWidget* MainWindow::build_settings_page() {
 }
 
 void MainWindow::setup_tray() {
-  tray_ = new QSystemTrayIcon(dot_icon(QColor(130, 130, 130)), this);
+  tray_ = new QSystemTrayIcon(state_icon(false), this);
   auto* menu = new QMenu(this);
   menu->addAction(tr("Open Clipster"), this, [this] {
     show();
@@ -182,17 +194,40 @@ void MainWindow::register_hotkeys() {
 
   hotkeys_ = std::make_unique<win::HotkeyManager>();
   std::string error;
-  if (!hotkeys_->register_hotkey(settings_.hotkeys.save_clip, save, &error)) {
+  const bool key_ok = hotkeys_->register_hotkey(settings_.hotkeys.save_clip, save, &error);
+  if (!key_ok) {
     log::error("{}", error);
-    statusBar()->showMessage(QString::fromStdString(error), 6000);
   }
 
   gamepad_.reset();
+  std::string pad_error;
   if (!settings_.hotkeys.controller_save_clip.empty()) {
-    gamepad_ = win::GamepadHotkey::create(settings_.hotkeys.controller_save_clip, save, &error);
+    gamepad_ =
+        win::GamepadHotkey::create(settings_.hotkeys.controller_save_clip, save, &pad_error);
     if (!gamepad_) {
-      log::warn("{}", error);
+      log::warn("{}", pad_error);
     }
+  }
+
+  // Show the hotkey state where the user can actually see it, and retry
+  // automatically — the combo may be held by an app that closes later.
+  if (key_ok) {
+    QString text = tr("Hotkey: %1").arg(QString::fromStdString(settings_.hotkeys.save_clip));
+    text += gamepad_ ? tr("  ·  Controller: %1")
+                           .arg(QString::fromStdString(settings_.hotkeys.controller_save_clip))
+                     : tr("  ·  Controller: off");
+    hotkey_label_->setText(text);
+    hotkey_label_->setStyleSheet("color: gray");
+  } else {
+    hotkey_label_->setText(tr("⚠ %1 — retrying every 30 s; the button and tray menu still work")
+                               .arg(QString::fromStdString(error)));
+    hotkey_label_->setStyleSheet("color: #c60");
+    if (!hotkey_retry_) {
+      hotkey_retry_ = new QTimer(this);
+      hotkey_retry_->setSingleShot(true);
+      connect(hotkey_retry_, &QTimer::timeout, this, [this] { register_hotkeys(); });
+    }
+    hotkey_retry_->start(30000);
   }
 }
 
@@ -207,8 +242,10 @@ void MainWindow::apply_settings() {
   manager_->update_settings(settings_);
   register_hotkeys();
   win::set_autostart(autostart_->isChecked(), L"--minimized");
-  statusBar()->showMessage(tr("Settings saved — recording settings apply to the next game"),
-                           5000);
+  statusBar()->showMessage(
+      tr("Settings saved — buffer, clip length, hotkeys and sounds apply now; "
+         "quality and audio sources at the next game"),
+      6000);
 }
 
 void MainWindow::refresh_status() {
@@ -219,14 +256,14 @@ void MainWindow::refresh_status() {
     status_label_->setStyleSheet("color: #d33");
     stats_label_->setText(QString::fromStdString(manager_->stats()));
     tray_->setToolTip(tr("Clipster — recording %1").arg(game));
-    tray_->setIcon(dot_icon(QColor(210, 60, 60)));
+    tray_->setIcon(state_icon(true));
   } else {
     status_label_->setText(tr("Waiting for a game…"));
     status_label_->setStyleSheet("");
     stats_label_->setText(
         tr("Launch a game from a watched folder and recording starts automatically."));
     tray_->setToolTip(tr("Clipster — waiting for a game"));
-    tray_->setIcon(dot_icon(QColor(130, 130, 130)));
+    tray_->setIcon(state_icon(false));
   }
   save_clip_btn_->setEnabled(recording);
 }
@@ -293,6 +330,19 @@ void MainWindow::quit_app() {
   tray_->hide();
   close();
   QApplication::quit();
+}
+
+QIcon MainWindow::state_icon(bool recording) const {
+  QPixmap pm = app_icon_.pixmap(32, 32);
+  if (recording) {
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(QColor(220, 50, 50));
+    p.setPen(QPen(Qt::white, 2));
+    p.drawEllipse(18, 18, 13, 13);  // recording badge, bottom-right
+    p.end();
+  }
+  return QIcon(pm);
 }
 
 QIcon MainWindow::dot_icon(const QColor& color) {

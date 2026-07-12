@@ -34,6 +34,7 @@ class MainWindow : public QMainWindow {
   void refresh_clips();
   void quit_app();
   std::filesystem::path clips_dir() const;
+  QIcon state_icon(bool recording) const;
   static QIcon dot_icon(const QColor& color);
 
   Settings settings_;
@@ -43,8 +44,10 @@ class MainWindow : public QMainWindow {
   std::unique_ptr<win::HotkeyManager> hotkeys_;
   std::unique_ptr<win::GamepadHotkey> gamepad_;
 
+  QIcon app_icon_;
   QLabel* status_label_ = nullptr;
   QLabel* stats_label_ = nullptr;
+  QLabel* hotkey_label_ = nullptr;
   QPushButton* save_clip_btn_ = nullptr;
   QListWidget* clips_list_ = nullptr;
   SettingsWidget* settings_widget_ = nullptr;
@@ -52,6 +55,7 @@ class MainWindow : public QMainWindow {
   QSystemTrayIcon* tray_ = nullptr;
   QTimer* status_timer_ = nullptr;
   QTimer* clips_timer_ = nullptr;
+  QTimer* hotkey_retry_ = nullptr;
   bool quitting_ = false;
   bool tray_hint_shown_ = false;
 };

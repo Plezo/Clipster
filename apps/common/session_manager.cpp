@@ -88,7 +88,15 @@ void SessionManager::update_settings(const Settings& settings) {
     settings_ = settings;
   }
   matcher_.store(build_matcher(settings));
-  log::info("settings updated (recording settings apply to the next game session)");
+  {
+    // Buffer length, clip length, output and sounds apply to the running
+    // session immediately; encoder/audio topology waits for the next one.
+    std::lock_guard lock(session_mutex_);
+    if (session_) {
+      session_->recorder->update_live_settings(settings);
+    }
+  }
+  log::info("settings updated (encoder/audio settings apply to the next game session)");
 }
 
 void SessionManager::save_clip() {
@@ -110,7 +118,14 @@ std::string SessionManager::current_game() const {
 
 std::string SessionManager::stats() const {
   std::lock_guard lock(session_mutex_);
-  return session_ ? session_->recorder->stats() : std::string();
+  if (!session_) {
+    return {};
+  }
+  std::string out = session_->recorder->stats();
+  if (!session_->audio) {
+    out += " — audio unavailable (see clipster.log)";
+  }
+  return out;
 }
 
 void SessionManager::control_loop() {
