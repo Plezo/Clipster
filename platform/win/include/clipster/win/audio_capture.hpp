@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace clipster::win {
 
@@ -40,6 +41,31 @@ class DesktopLoopbackCapture {
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };
+
+// Captures a microphone (or any capture endpoint). `device` is a friendly
+// name substring ("Blue Yeti"), or "default"/empty for the system's
+// default communications microphone. Capture endpoints deliver a
+// continuous stream (silence included), unlike loopback.
+class MicrophoneCapture {
+ public:
+  static std::unique_ptr<MicrophoneCapture> create(const std::string& device, AudioSink sink,
+                                                   std::string* error);
+  ~MicrophoneCapture();
+
+  void start();
+  void stop();
+
+  int sample_rate() const;
+  int channels() const;
+
+ private:
+  MicrophoneCapture();
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
+};
+
+// Friendly names of active capture endpoints, for the settings UI.
+std::vector<std::string> list_capture_devices();
 
 // Captures ONLY a given process tree's audio (IncludeTree) or everything
 // EXCEPT it (ExcludeTree) via WASAPI process loopback. This is what powers

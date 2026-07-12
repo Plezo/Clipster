@@ -3,6 +3,7 @@
 #include <audioclient.h>
 #include <mmdeviceapi.h>
 #include <mmreg.h>
+#include <propsys.h>
 
 #if __has_include(<audioclientactivationparams.h>)
 #include <audioclientactivationparams.h>
@@ -19,6 +20,8 @@
 #include <vector>
 
 #include "clipster/logging.hpp"
+#include "clipster/util.hpp"
+#include "clipster/win/str_util.hpp"
 
 namespace clipster::win {
 
@@ -258,6 +261,167 @@ void DesktopLoopbackCapture::start() { impl_->engine.start(); }
 void DesktopLoopbackCapture::stop() { impl_->engine.stop(); }
 int DesktopLoopbackCapture::sample_rate() const { return impl_->engine.sample_rate; }
 int DesktopLoopbackCapture::channels() const { return impl_->engine.channels; }
+
+// --- MicrophoneCapture -------------------------------------------------------
+
+namespace {
+
+// PKEY_Device_FriendlyName, spelled out to avoid GUID-instantiation
+// header ceremony.
+constexpr PROPERTYKEY kFriendlyNameKey = {
+    {0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
+
+std::string device_friendly_name(IMMDevice* device) {
+  IPropertyStore* store = nullptr;
+  if (FAILED(device->OpenPropertyStore(STGM_READ, &store))) {
+    return {};
+  }
+  PROPVARIANT value;
+  PropVariantInit(&value);
+  std::string name;
+  if (SUCCEEDED(store->GetValue(kFriendlyNameKey, &value)) && value.vt == VT_LPWSTR) {
+    name = narrow(value.pwszVal);
+  }
+  PropVariantClear(&value);
+  store->Release();
+  return name;
+}
+
+// Default communications mic (what Discord uses), or the first active
+// capture endpoint whose friendly name contains `wanted`.
+IMMDevice* find_capture_device(const std::string& wanted) {
+  IMMDeviceEnumerator* enumerator = nullptr;
+  if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                              __uuidof(IMMDeviceEnumerator),
+                              reinterpret_cast<void**>(&enumerator)))) {
+    return nullptr;
+  }
+
+  IMMDevice* device = nullptr;
+  if (!wanted.empty() && wanted != "default") {
+    IMMDeviceCollection* collection = nullptr;
+    if (SUCCEEDED(enumerator->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &collection))) {
+      UINT count = 0;
+      collection->GetCount(&count);
+      const std::string wanted_lower = util::to_lower_ascii(wanted);
+      for (UINT i = 0; i < count && !device; ++i) {
+        IMMDevice* candidate = nullptr;
+        if (FAILED(collection->Item(i, &candidate))) {
+          continue;
+        }
+        if (util::to_lower_ascii(device_friendly_name(candidate)).find(wanted_lower) !=
+            std::string::npos) {
+          device = candidate;  // transfer ownership
+        } else {
+          candidate->Release();
+        }
+      }
+      collection->Release();
+    }
+    if (!device) {
+      log::warn("audio: microphone '{}' not found — using the default device", wanted);
+    }
+  }
+  if (!device) {
+    enumerator->GetDefaultAudioEndpoint(eCapture, eCommunications, &device);
+  }
+  enumerator->Release();
+  return device;
+}
+
+}  // namespace
+
+std::vector<std::string> list_capture_devices() {
+  std::vector<std::string> names;
+  IMMDeviceEnumerator* enumerator = nullptr;
+  if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                              __uuidof(IMMDeviceEnumerator),
+                              reinterpret_cast<void**>(&enumerator)))) {
+    return names;
+  }
+  IMMDeviceCollection* collection = nullptr;
+  if (SUCCEEDED(enumerator->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, &collection))) {
+    UINT count = 0;
+    collection->GetCount(&count);
+    for (UINT i = 0; i < count; ++i) {
+      IMMDevice* device = nullptr;
+      if (SUCCEEDED(collection->Item(i, &device))) {
+        std::string name = device_friendly_name(device);
+        if (!name.empty()) {
+          names.push_back(std::move(name));
+        }
+        device->Release();
+      }
+    }
+    collection->Release();
+  }
+  enumerator->Release();
+  return names;
+}
+
+struct MicrophoneCapture::Impl {
+  CaptureEngine engine;
+};
+
+MicrophoneCapture::MicrophoneCapture() : impl_(std::make_unique<Impl>()) {}
+MicrophoneCapture::~MicrophoneCapture() = default;
+
+std::unique_ptr<MicrophoneCapture> MicrophoneCapture::create(const std::string& device_name,
+                                                             AudioSink sink,
+                                                             std::string* error) {
+  auto fail = [&](const char* msg) -> std::unique_ptr<MicrophoneCapture> {
+    if (error) *error = msg;
+    return nullptr;
+  };
+
+  auto cap = std::unique_ptr<MicrophoneCapture>(new MicrophoneCapture());
+  CaptureEngine& eng = cap->impl_->engine;
+  eng.sink = std::move(sink);
+
+  IMMDevice* device = find_capture_device(device_name);
+  if (!device) {
+    return fail("no microphone available");
+  }
+  log::info("audio: microphone '{}'", device_friendly_name(device));
+
+  const HRESULT act_hr = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                          reinterpret_cast<void**>(&eng.client));
+  device->Release();
+  if (FAILED(act_hr)) {
+    return fail("microphone IAudioClient activation failed");
+  }
+
+  WAVEFORMATEX* wf = nullptr;
+  if (FAILED(eng.client->GetMixFormat(&wf))) {
+    return fail("microphone GetMixFormat failed");
+  }
+  eng.channels = wf->nChannels;
+  eng.sample_rate = static_cast<int>(wf->nSamplesPerSec);
+  eng.samples_are_int16 = is_int16_format(wf);
+  if (!eng.samples_are_int16 && !is_float_format(wf)) {
+    CoTaskMemFree(wf);
+    return fail("unsupported microphone format (expected float32 or int16)");
+  }
+
+  const HRESULT init_hr =
+      eng.client->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+                             kBufferDuration100ns, 0, wf, nullptr);
+  CoTaskMemFree(wf);
+  if (FAILED(init_hr)) {
+    return fail("microphone IAudioClient::Initialize failed");
+  }
+
+  if (!finish_engine_setup(eng, error)) {
+    return nullptr;
+  }
+  log::info("audio: microphone ready ({} ch @ {} Hz)", eng.channels, eng.sample_rate);
+  return cap;
+}
+
+void MicrophoneCapture::start() { impl_->engine.start(); }
+void MicrophoneCapture::stop() { impl_->engine.stop(); }
+int MicrophoneCapture::sample_rate() const { return impl_->engine.sample_rate; }
+int MicrophoneCapture::channels() const { return impl_->engine.channels; }
 
 // --- ProcessLoopbackCapture --------------------------------------------------
 

@@ -12,7 +12,8 @@ namespace clipster::media {
 struct ClipJob {
   std::vector<EncodedPacket> packets;  // from SegmentRingBuffer::snapshot()
   VideoStreamInfo video;
-  std::optional<AudioStreamInfo> audio;
+  std::optional<AudioStreamInfo> audio;       // game/system audio track
+  std::optional<AudioStreamInfo> microphone;  // separate mic track
   std::filesystem::path out_path;
 };
 

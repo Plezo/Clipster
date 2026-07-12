@@ -7,7 +7,7 @@
 
 namespace clipster {
 
-enum class StreamKind { Video, Audio };
+enum class StreamKind { Video, Audio, Microphone };
 
 // One encoded media packet (an H.264/HEVC access unit or an AAC frame).
 // The payload is shared and immutable so ring-buffer snapshots are cheap:

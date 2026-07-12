@@ -93,21 +93,33 @@ bool write_clip(const ClipJob& job, std::string* error) {
     return fail("bad video codec parameters (" + job.video.codec_name + ")");
   }
 
+  const auto make_audio_stream = [&](const AudioStreamInfo& info, const char* title,
+                                     AVStream** out) {
+    AVStream* st = avformat_new_stream(fmt.ctx, nullptr);
+    if (!st) {
+      return false;
+    }
+    st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+    st->codecpar->codec_id = codec_id_from_name(info.codec_name);
+    st->codecpar->sample_rate = info.sample_rate;
+    av_channel_layout_default(&st->codecpar->ch_layout, info.channels);
+    st->time_base = AVRational{1, info.sample_rate};
+    av_dict_set(&st->metadata, "title", title, 0);
+    if (st->codecpar->codec_id == AV_CODEC_ID_NONE ||
+        !set_extradata(st->codecpar, info.extradata)) {
+      return false;
+    }
+    *out = st;
+    return true;
+  };
+
   AVStream* audio_st = nullptr;
-  if (job.audio) {
-    audio_st = avformat_new_stream(fmt.ctx, nullptr);
-    if (!audio_st) {
-      return fail("could not create audio stream");
-    }
-    audio_st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
-    audio_st->codecpar->codec_id = codec_id_from_name(job.audio->codec_name);
-    audio_st->codecpar->sample_rate = job.audio->sample_rate;
-    av_channel_layout_default(&audio_st->codecpar->ch_layout, job.audio->channels);
-    audio_st->time_base = AVRational{1, job.audio->sample_rate};
-    if (audio_st->codecpar->codec_id == AV_CODEC_ID_NONE ||
-        !set_extradata(audio_st->codecpar, job.audio->extradata)) {
-      return fail("bad audio codec parameters (" + job.audio->codec_name + ")");
-    }
+  if (job.audio && !make_audio_stream(*job.audio, "Game Audio", &audio_st)) {
+    return fail("bad audio codec parameters (" + job.audio->codec_name + ")");
+  }
+  AVStream* mic_st = nullptr;
+  if (job.microphone && !make_audio_stream(*job.microphone, "Microphone", &mic_st)) {
+    return fail("bad microphone codec parameters (" + job.microphone->codec_name + ")");
   }
 
   if (avio_open(&fmt.ctx->pb, tmp_cstr, AVIO_FLAG_WRITE) < 0) {
@@ -124,15 +136,24 @@ bool write_clip(const ClipJob& job, std::string* error) {
 
   static const AVRational kMicroTb{1, 1'000'000};
   for (const EncodedPacket& src : job.packets) {
-    const bool is_video = src.stream == StreamKind::Video;
-    if (!is_video && !audio_st) {
-      continue;  // audio captured but not configured for this clip
+    AVStream* st = nullptr;
+    switch (src.stream) {
+      case StreamKind::Video:
+        st = video_st;
+        break;
+      case StreamKind::Audio:
+        st = audio_st;
+        break;
+      case StreamKind::Microphone:
+        st = mic_st;
+        break;
+    }
+    if (!st) {
+      continue;  // captured but not configured for this clip
     }
     if (src.pts_us < base_us) {
       continue;  // audio that predates the clip's first keyframe
     }
-
-    AVStream* st = is_video ? video_st : audio_st;
     AVPacket* pkt = av_packet_alloc();
     if (!pkt || av_new_packet(pkt, static_cast<int>(src.size())) < 0) {
       av_packet_free(&pkt);

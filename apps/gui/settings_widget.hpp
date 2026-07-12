@@ -38,6 +38,9 @@ class SettingsWidget : public QWidget {
   QGroupBox* exclude_group_ = nullptr;
   QListWidget* include_list_ = nullptr;
   QListWidget* exclude_list_ = nullptr;
+  QCheckBox* mic_enabled_ = nullptr;
+  QComboBox* mic_device_ = nullptr;
+  QCheckBox* mic_separate_ = nullptr;
   QCheckBox* steam_ = nullptr;
   QListWidget* folders_list_ = nullptr;
   QListWidget* exes_list_ = nullptr;

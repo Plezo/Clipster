@@ -6,6 +6,8 @@
 
 #include <functional>
 
+#include "clipster/win/audio_capture.hpp"
+
 namespace clipster::gui {
 
 namespace {
@@ -209,6 +211,37 @@ QWidget* SettingsWidget::build_audio_tab() {
   connect(audio_mode_, &QComboBox::currentIndexChanged, this, update_groups);
   update_groups();
 
+  auto* mic_group = new QGroupBox(tr("Microphone"));
+  auto* mic_form = new QFormLayout(mic_group);
+
+  mic_enabled_ = new QCheckBox(tr("Record my microphone"));
+  mic_enabled_->setChecked(initial_.audio.microphone.enabled);
+  mic_form->addRow(QString(), mic_enabled_);
+
+  mic_device_ = new QComboBox;
+  mic_device_->addItem(tr("Default (communications device)"));
+  const QString current = QString::fromStdString(initial_.audio.microphone.device);
+  for (const auto& name : win::list_capture_devices()) {
+    mic_device_->addItem(QString::fromStdString(name));
+  }
+  if (!current.isEmpty() && current != "default") {
+    int idx = mic_device_->findText(current, Qt::MatchFixedString);
+    if (idx < 0) {
+      mic_device_->addItem(current);  // currently unplugged device
+      idx = mic_device_->count() - 1;
+    }
+    mic_device_->setCurrentIndex(idx);
+  }
+  mic_form->addRow(tr("Device:"), mic_device_);
+
+  mic_separate_ = new QCheckBox(
+      tr("Keep the microphone on its own audio track (best for editing; "
+         "some players only play the first track)"));
+  mic_separate_->setChecked(initial_.audio.microphone.separate_track);
+  mic_form->addRow(QString(), mic_separate_);
+
+  layout->addWidget(mic_group);
+
   layout->addStretch();
   return page;
 }
@@ -318,6 +351,10 @@ Settings SettingsWidget::collect() const {
   s.audio.mode = audio_mode_->currentData().toString().toStdString();
   s.audio.include_apps = from_list_widget(include_list_);
   s.audio.exclude_apps = from_list_widget(exclude_list_);
+  s.audio.microphone.enabled = mic_enabled_->isChecked();
+  s.audio.microphone.device =
+      mic_device_->currentIndex() == 0 ? "default" : mic_device_->currentText().toStdString();
+  s.audio.microphone.separate_track = mic_separate_->isChecked();
 
   s.games.auto_detect_steam = steam_->isChecked();
   s.games.watched_folders = from_list_widget(folders_list_);

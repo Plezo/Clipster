@@ -21,6 +21,7 @@ constexpr int kOutChannels = 2;
 }  // namespace
 
 struct AudioEncoder::Impl {
+  StreamKind stream_kind = StreamKind::Audio;
   AVCodecContext* ctx = nullptr;
   SwrContext* swr = nullptr;
   AVAudioFifo* fifo = nullptr;
@@ -50,7 +51,7 @@ struct AudioEncoder::Impl {
         return false;
       }
       EncodedPacket out;
-      out.stream = StreamKind::Audio;
+      out.stream = stream_kind;
       out.pts_us = pkt->pts;
       out.dts_us = pkt->dts;
       out.keyframe = true;  // every AAC frame is independently decodable
@@ -113,6 +114,7 @@ std::unique_ptr<AudioEncoder> AudioEncoder::create(const AudioEncoderConfig& con
 
   auto enc = std::unique_ptr<AudioEncoder>(new AudioEncoder());
   Impl& im = *enc->impl_;
+  im.stream_kind = config.stream_kind;
   im.sink = std::move(sink);
 
   im.ctx = avcodec_alloc_context3(codec);

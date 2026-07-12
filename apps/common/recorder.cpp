@@ -87,6 +87,11 @@ void Recorder::set_audio_info(AudioStreamInfo info) {
   has_audio_.store(true, std::memory_order_release);
 }
 
+void Recorder::set_microphone_info(AudioStreamInfo info) {
+  microphone_info_ = std::move(info);
+  has_microphone_.store(true, std::memory_order_release);
+}
+
 void Recorder::push_audio_packet(EncodedPacket packet) { ring_.push(std::move(packet)); }
 
 Settings Recorder::settings_copy() const {
@@ -125,6 +130,9 @@ void Recorder::save_clip(std::chrono::seconds length) {
   job.video = encoder_->stream_info();
   if (has_audio_.load(std::memory_order_acquire)) {
     job.audio = audio_info_;
+  }
+  if (has_microphone_.load(std::memory_order_acquire)) {
+    job.microphone = microphone_info_;
   }
   job.out_path = build_output_path(settings);
 

@@ -48,9 +48,11 @@ struct ClipSettings {
 // systems the app degrades to "desktop" with a warning.
 struct MicrophoneSettings {
   bool enabled = false;
+  // Friendly-name substring, or "default" for the system communications mic.
   std::string device = "default";
-  // Written as a second audio track in the MP4 so editors can adjust or
-  // mute the mic independently.
+  // true: a second audio track in the MP4 (editors can balance/mute it).
+  // false: mixed into the game track (plays everywhere, e.g. Discord
+  // embeds); falls back to a separate track if sample rates differ.
   bool separate_track = true;
 };
 

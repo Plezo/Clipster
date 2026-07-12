@@ -12,6 +12,8 @@ struct AudioEncoderConfig {
   int in_sample_rate = 48000;  // format of the samples fed to encode()
   int in_channels = 2;
   int bitrate_kbps = 160;
+  // Which track the emitted packets belong to (Audio or Microphone).
+  StreamKind stream_kind = StreamKind::Audio;
 };
 
 // Encodes interleaved float PCM into AAC packets. Input is resampled and

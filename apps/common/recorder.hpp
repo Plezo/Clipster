@@ -45,8 +45,9 @@ class Recorder {
   int64_t timeline_base_us() const {
     return timeline_base_us_.load(std::memory_order_acquire);
   }
-  // Call once, before audio packets start flowing.
+  // Call once each, before audio packets start flowing.
   void set_audio_info(AudioStreamInfo info);
+  void set_microphone_info(AudioStreamInfo info);
   // Thread-safe; pts already rebased to the shared timeline.
   void push_audio_packet(EncodedPacket packet);
 
@@ -77,6 +78,8 @@ class Recorder {
   std::atomic<bool> encoder_ready_{false};
   AudioStreamInfo audio_info_;
   std::atomic<bool> has_audio_{false};
+  AudioStreamInfo microphone_info_;
+  std::atomic<bool> has_microphone_{false};
   std::atomic<int64_t> timeline_base_us_{-1};
   int64_t first_pts_us_ = -1;
   int64_t next_due_us_ = 0;
