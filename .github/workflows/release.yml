@@ -38,9 +38,13 @@ jobs:
             for (const v of ['ACTIONS_CACHE_URL', 'ACTIONS_RESULTS_URL', 'ACTIONS_RUNTIME_TOKEN'])
               core.exportVariable(v, process.env[v] || '');
 
+      # Ninja works with whatever Visual Studio the runner ships (see ci.yml).
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       # --clean-after-build keeps the runner disk from filling up (see ci.yml).
       - name: Configure
-        run: cmake --preset windows -D "VCPKG_INSTALL_OPTIONS=--clean-after-build"
+        run: cmake --preset windows-ci -D "VCPKG_INSTALL_OPTIONS=--clean-after-build"
 
       - name: Upload dependency build logs on failure
         if: failure()
@@ -51,21 +55,24 @@ jobs:
           if-no-files-found: ignore
 
       - name: Build
-        run: cmake --build --preset windows-release --parallel
+        run: cmake --build --preset windows-ci --parallel
 
       - name: Test
-        run: ctest --preset windows
+        run: ctest --preset windows-ci
 
-      # The gui output dir is already a complete, runnable layout (exe,
-      # DLLs, Qt plugins, assets); strip debug symbols and zip it.
+      # The gui output dir holds the runnable layout (exe, DLLs, Qt plugin
+      # dirs, assets) but with Ninja it also holds CMake build files, so
+      # cherry-pick the runtime pieces. No *.pdb copied = symbols stripped.
       - name: Package
         shell: pwsh
         run: |
-          $src = "build/windows/apps/gui/RelWithDebInfo"
+          $src = "build/windows-ci/apps/gui"
           $stage = "stage/Clipster"
           New-Item -ItemType Directory -Force $stage | Out-Null
-          Copy-Item "$src/*" $stage -Recurse
-          Get-ChildItem $stage -Recurse -Filter *.pdb | Remove-Item
+          Copy-Item "$src/*.exe", "$src/*.dll" $stage
+          foreach ($dir in 'platforms', 'styles', 'imageformats', 'assets') {
+            if (Test-Path "$src/$dir") { Copy-Item "$src/$dir" $stage -Recurse }
+          }
           Copy-Item README.md, LICENSE $stage
           Compress-Archive -Path "stage/Clipster" `
             -DestinationPath "Clipster-$($env:GITHUB_REF_NAME)-windows-x64.zip"

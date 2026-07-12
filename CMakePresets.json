@@ -15,6 +15,14 @@
       "inherits": "windows-base"
     },
     {
+      "name": "windows-ci",
+      "displayName": "Windows x64 CI (Ninja, any MSVC)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
       "name": "linux-core",
       "displayName": "Linux (core + tests only, no vcpkg)",
       "generator": "Unix Makefiles",
@@ -38,6 +46,10 @@
       "configuration": "RelWithDebInfo"
     },
     {
+      "name": "windows-ci",
+      "configurePreset": "windows-ci"
+    },
+    {
       "name": "linux-core",
       "configurePreset": "linux-core"
     }
@@ -47,6 +59,11 @@
       "name": "windows",
       "configurePreset": "windows",
       "configuration": "RelWithDebInfo",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "windows-ci",
+      "configurePreset": "windows-ci",
       "output": { "outputOnFailure": true }
     },
     {

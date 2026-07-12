@@ -54,10 +54,17 @@ jobs:
             for (const v of ['ACTIONS_CACHE_URL', 'ACTIONS_RESULTS_URL', 'ACTIONS_RUNTIME_TOKEN'])
               core.exportVariable(v, process.env[v] || '');
 
+      # The windows-ci preset uses Ninja so the build works with whatever
+      # Visual Studio the runner image ships (the VS2022 generator broke
+      # when windows-latest moved to a newer VS). This puts cl.exe in the
+      # environment for Ninja to find.
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
       # --clean-after-build deletes each port's buildtree once it is
       # installed; FFmpeg+Qt buildtrees otherwise exhaust the runner disk.
       - name: Configure
-        run: cmake --preset windows -D "VCPKG_INSTALL_OPTIONS=--clean-after-build"
+        run: cmake --preset windows-ci -D "VCPKG_INSTALL_OPTIONS=--clean-after-build"
 
       - name: Upload dependency build logs on failure
         if: failure()
@@ -68,16 +75,16 @@ jobs:
           if-no-files-found: ignore
 
       - name: Build
-        run: cmake --build --preset windows-release --parallel
+        run: cmake --build --preset windows-ci --parallel
 
       - name: Test
-        run: ctest --preset windows
+        run: ctest --preset windows-ci
 
       - name: Upload executables
         uses: actions/upload-artifact@v4
         with:
           name: clipster-windows-x64
           path: |
-            build/windows/apps/gui/RelWithDebInfo/Clipster.exe
-            build/windows/apps/cli/RelWithDebInfo/clipster-cli.exe
+            build/windows-ci/apps/gui/Clipster.exe
+            build/windows-ci/apps/cli/clipster-cli.exe
           if-no-files-found: error
