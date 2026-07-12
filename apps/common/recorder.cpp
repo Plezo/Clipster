@@ -173,9 +173,7 @@ std::filesystem::path Recorder::build_output_path(const Settings& settings) cons
   std::filesystem::path dir = settings.output.save_dir.empty()
                                   ? win::default_save_dir()
                                   : std::filesystem::path(settings.output.save_dir);
-  if (settings.output.subfolder_per_game) {
-    dir /= util::sanitize_filename(game_name_);
-  }
+  dir /= util::sanitize_filename(game_name_);
   std::error_code ec;
   std::filesystem::create_directories(dir, ec);
 

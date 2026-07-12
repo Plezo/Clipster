@@ -42,12 +42,10 @@ static json to_json(const Settings& s) {
        {{"fps", s.recording.fps},
         {"bitrate_kbps", s.recording.bitrate_kbps},
         {"codec", s.recording.codec},
-        {"buffer_seconds", s.recording.buffer_seconds},
-        {"capture_window_frame", s.recording.capture_window_frame}}},
+        {"buffer_seconds", s.recording.buffer_seconds}}},
       {"output",
        {{"save_dir", s.output.save_dir},
-        {"filename_template", s.output.filename_template},
-        {"subfolder_per_game", s.output.subfolder_per_game}}},
+        {"filename_template", s.output.filename_template}}},
       {"clip",
        {{"default_length_seconds", s.clip.default_length_seconds},
         {"quick_lengths", s.clip.quick_lengths}}},
@@ -60,8 +58,7 @@ static json to_json(const Settings& s) {
         {"bitrate_kbps", s.audio.bitrate_kbps},
         {"microphone",
          {{"enabled", s.audio.microphone.enabled},
-          {"device", s.audio.microphone.device},
-          {"separate_track", s.audio.microphone.separate_track}}}}},
+          {"device", s.audio.microphone.device}}}}},
       {"games",
        {{"auto_detect_steam", s.games.auto_detect_steam},
         {"watched_folders", s.games.watched_folders},
@@ -83,12 +80,10 @@ static void from_json(const json& j, Settings& s) {
     read(*it, "bitrate_kbps", s.recording.bitrate_kbps);
     read(*it, "codec", s.recording.codec);
     read(*it, "buffer_seconds", s.recording.buffer_seconds);
-    read(*it, "capture_window_frame", s.recording.capture_window_frame);
   }
   if (auto it = j.find("output"); it != j.end() && it->is_object()) {
     read(*it, "save_dir", s.output.save_dir);
     read(*it, "filename_template", s.output.filename_template);
-    read(*it, "subfolder_per_game", s.output.subfolder_per_game);
   }
   if (auto it = j.find("clip"); it != j.end() && it->is_object()) {
     read(*it, "default_length_seconds", s.clip.default_length_seconds);
@@ -104,7 +99,6 @@ static void from_json(const json& j, Settings& s) {
     if (auto mic = it->find("microphone"); mic != it->end() && mic->is_object()) {
       read(*mic, "enabled", s.audio.microphone.enabled);
       read(*mic, "device", s.audio.microphone.device);
-      read(*mic, "separate_track", s.audio.microphone.separate_track);
     }
   }
   if (auto it = j.find("games"); it != j.end() && it->is_object()) {

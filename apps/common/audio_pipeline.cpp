@@ -121,9 +121,9 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
         });
   };
 
-  // Optional microphone: its own AAC track by default, or mixed into the
-  // main track when the user asked for it and the sample rates line up.
-  const auto setup_microphone = [&](int mix_rate) {
+  // Optional microphone, always on its own AAC track so voice can be
+  // balanced or muted in an editor.
+  const auto setup_microphone = [&] {
     if (!settings.audio.microphone.enabled) {
       return;
     }
@@ -141,35 +141,21 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
       return;
     }
 
-    bool separate = settings.audio.microphone.separate_track;
-    if (!separate && cap->sample_rate() != mix_rate) {
-      log::warn("audio: mic rate {} != mix rate {} — keeping the microphone on its own track",
-                cap->sample_rate(), mix_rate);
-      separate = true;
+    media::AudioEncoderConfig cfg;
+    cfg.in_sample_rate = cap->sample_rate();
+    cfg.in_channels = cap->channels();
+    cfg.bitrate_kbps = settings.audio.bitrate_kbps;
+    cfg.stream_kind = StreamKind::Microphone;
+    std::string enc_error;
+    im.mic_encoder = media::AudioEncoder::create(
+        cfg, [imp](EncodedPacket pkt) { imp->recorder->push_audio_packet(std::move(pkt)); },
+        &enc_error);
+    if (!im.mic_encoder) {
+      log::warn("audio: microphone disabled: {}", enc_error);
+      return;
     }
-
-    if (separate) {
-      media::AudioEncoderConfig cfg;
-      cfg.in_sample_rate = cap->sample_rate();
-      cfg.in_channels = cap->channels();
-      cfg.bitrate_kbps = settings.audio.bitrate_kbps;
-      cfg.stream_kind = StreamKind::Microphone;
-      std::string enc_error;
-      im.mic_encoder = media::AudioEncoder::create(
-          cfg, [imp](EncodedPacket pkt) { imp->recorder->push_audio_packet(std::move(pkt)); },
-          &enc_error);
-      if (!im.mic_encoder) {
-        log::warn("audio: microphone disabled: {}", enc_error);
-        return;
-      }
-      im.mic_sink = [imp](const win::AudioChunk& c) { imp->encode_mic_on_timeline(c); };
-      recorder.set_microphone_info(im.mic_encoder->stream_info());
-      log::info("audio: microphone on its own track");
-    } else {
-      const size_t source = im.mixer->add_source();
-      im.mic_sink = [imp, source](const win::AudioChunk& c) { imp->mixer->submit(source, c); };
-      log::info("audio: microphone mixed into the main track");
-    }
+    im.mic_sink = [imp](const win::AudioChunk& c) { imp->encode_mic_on_timeline(c); };
+    recorder.set_microphone_info(im.mic_encoder->stream_info());
     im.mic_capture = std::move(cap);
   };
 
@@ -225,7 +211,7 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
     }
     make_mixer(in_rate, in_channels);
     im.mixer->add_source();  // the captures above submit to source 0
-    setup_microphone(in_rate);
+    setup_microphone();
     recorder.set_audio_info(im.encoder->stream_info());
     return pipeline;
   }
@@ -277,7 +263,7 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
   if (im.process_captures.empty()) {
     return fail("all audio captures failed");
   }
-  setup_microphone(kRate);
+  setup_microphone();
   recorder.set_audio_info(im.encoder->stream_info());
   return pipeline;
 }

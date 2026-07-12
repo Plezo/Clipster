@@ -120,10 +120,6 @@ QWidget* SettingsWidget::build_recording_tab() {
   buffer_->setValue(initial_.recording.buffer_seconds);
   form->addRow(tr("Replay buffer length:"), buffer_);
 
-  capture_frame_ = new QCheckBox(tr("Include window title bar and borders (windowed games)"));
-  capture_frame_->setChecked(initial_.recording.capture_window_frame);
-  form->addRow(QString(), capture_frame_);
-
   ram_label_ = new QLabel;
   ram_label_->setStyleSheet("color: gray");
   form->addRow(QString(), ram_label_);
@@ -156,15 +152,32 @@ QWidget* SettingsWidget::build_output_tab() {
   row->addWidget(browse);
   form->addRow(tr("Save clips to:"), row);
 
-  subfolder_ = new QCheckBox(tr("Create a subfolder per game"));
-  subfolder_->setChecked(initial_.output.subfolder_per_game);
-  form->addRow(QString(), subfolder_);
+  auto* subfolder_hint = new QLabel(tr("Each game gets its own subfolder automatically."));
+  subfolder_hint->setStyleSheet("color: gray");
+  form->addRow(QString(), subfolder_hint);
 
   template_ = new QLineEdit(QString::fromStdString(initial_.output.filename_template));
+  template_->setToolTip(
+      tr("Building blocks for the clip's filename:\n"
+         "  {game} — the game's name\n"
+         "  {date} — date saved, e.g. 2026-07-11\n"
+         "  {time} — time saved, e.g. 21-30-05\n"
+         "Anything else is kept as literal text."));
   form->addRow(tr("Filename template:"), template_);
-  auto* hint = new QLabel(tr("Placeholders: {game} {date} {time}"));
-  hint->setStyleSheet("color: gray");
-  form->addRow(QString(), hint);
+
+  template_example_ = new QLabel;
+  template_example_->setStyleSheet("color: gray");
+  form->addRow(QString(), template_example_);
+
+  const auto update_example = [this] {
+    QString example = template_->text();
+    example.replace("{game}", tr("Deathloop"));
+    example.replace("{date}", "2026-07-11");
+    example.replace("{time}", "21-30-05");
+    template_example_->setText(tr("Example: Deathloop\\%1.mp4").arg(example));
+  };
+  connect(template_, &QLineEdit::textChanged, this, update_example);
+  update_example();
 
   clip_len_ = new QSpinBox;
   clip_len_->setRange(5, 600);
@@ -234,11 +247,12 @@ QWidget* SettingsWidget::build_audio_tab() {
   }
   mic_form->addRow(tr("Device:"), mic_device_);
 
-  mic_separate_ = new QCheckBox(
-      tr("Keep the microphone on its own audio track (best for editing; "
-         "some players only play the first track)"));
-  mic_separate_->setChecked(initial_.audio.microphone.separate_track);
-  mic_form->addRow(QString(), mic_separate_);
+  auto* mic_hint = new QLabel(
+      tr("Recorded as a separate audio track, so you can rebalance or mute "
+         "your voice in an editor."));
+  mic_hint->setStyleSheet("color: gray");
+  mic_hint->setWordWrap(true);
+  mic_form->addRow(QString(), mic_hint);
 
   layout->addWidget(mic_group);
 
@@ -341,11 +355,9 @@ Settings SettingsWidget::collect() const {
   s.recording.bitrate_kbps = bitrate_->value() * 1000;
   s.recording.codec = codec_->currentData().toString().toStdString();
   s.recording.buffer_seconds = buffer_->value();
-  s.recording.capture_window_frame = capture_frame_->isChecked();
 
   s.output.save_dir = save_dir_->text().trimmed().toStdString();
   s.output.filename_template = template_->text().toStdString();
-  s.output.subfolder_per_game = subfolder_->isChecked();
   s.clip.default_length_seconds = clip_len_->value();
 
   s.audio.mode = audio_mode_->currentData().toString().toStdString();
@@ -354,7 +366,6 @@ Settings SettingsWidget::collect() const {
   s.audio.microphone.enabled = mic_enabled_->isChecked();
   s.audio.microphone.device =
       mic_device_->currentIndex() == 0 ? "default" : mic_device_->currentText().toStdString();
-  s.audio.microphone.separate_track = mic_separate_->isChecked();
 
   s.games.auto_detect_steam = steam_->isChecked();
   s.games.watched_folders = from_list_widget(folders_list_);

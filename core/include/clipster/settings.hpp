@@ -15,17 +15,14 @@ struct RecordingSettings {
   // Sliding window length. RAM cost is roughly
   // buffer_seconds * bitrate_kbps / 8 KB (120 s @ 20 Mbps ~= 300 MB).
   int buffer_seconds = 120;
-  // Windowed games: false (default) crops recording to the game surface;
-  // true keeps the title bar and borders in frame.
-  bool capture_window_frame = false;
 };
 
 struct OutputSettings {
-  // Empty means "<Videos>/Clipster" resolved at runtime.
+  // Empty means "<Videos>/Clipster" resolved at runtime. Clips always go
+  // into a per-game subfolder underneath.
   std::string save_dir;
   // Available placeholders: {game} {date} {time}
   std::string filename_template = "{game} {date} {time}";
-  bool subfolder_per_game = true;
 };
 
 struct ClipSettings {
@@ -46,14 +43,12 @@ struct ClipSettings {
 //
 // Implemented with WASAPI process loopback on Windows (10 2004+); on older
 // systems the app degrades to "desktop" with a warning.
+// The microphone is always written as its own audio track (titled
+// "Microphone") so voice can be balanced or muted after the fact.
 struct MicrophoneSettings {
   bool enabled = false;
   // Friendly-name substring, or "default" for the system communications mic.
   std::string device = "default";
-  // true: a second audio track in the MP4 (editors can balance/mute it).
-  // false: mixed into the game track (plays everywhere, e.g. Discord
-  // embeds); falls back to a separate track if sample rates differ.
-  bool separate_track = true;
 };
 
 struct AudioSettings {

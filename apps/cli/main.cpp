@@ -124,8 +124,7 @@ int main(int argc, char** argv) {
 
   std::string error;
   auto capture = win::WgcCapture::create_for_window(
-      target->hwnd, [&recorder](const win::CapturedFrame& f) { recorder.on_frame(f); }, &error,
-      /*client_area_only=*/!settings.recording.capture_window_frame);
+      target->hwnd, [&recorder](const win::CapturedFrame& f) { recorder.on_frame(f); }, &error);
   if (!capture) {
     log::error("capture setup failed: {}", error);
     return 1;

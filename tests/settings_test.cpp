@@ -19,12 +19,10 @@ TEST(settings_round_trip_through_json) {
   Settings s;
   s.recording.fps = 30;
   s.recording.codec = "hevc";
-  s.recording.capture_window_frame = true;
   s.audio.mode = "desktop_exclude";
   s.audio.exclude_apps = {"Spotify.exe", "chrome.exe"};
   s.audio.microphone.enabled = true;
   s.audio.microphone.device = "Blue Yeti";
-  s.audio.microphone.separate_track = false;
   s.games.manual_exes = {"C:\\Games\\retro\\emu.exe"};
   s.hotkeys.save_clip = "Ctrl+Shift+F9";
   s.notifications.sound_enabled = false;
@@ -33,12 +31,10 @@ TEST(settings_round_trip_through_json) {
   const Settings back = Settings::from_json_string(s.to_json_string());
   CHECK_EQ(back.recording.fps, 30);
   CHECK_EQ(back.recording.codec, "hevc");
-  CHECK(back.recording.capture_window_frame);
   CHECK_EQ(back.audio.mode, "desktop_exclude");
   CHECK_EQ(back.audio.exclude_apps.size(), 2u);
   CHECK(back.audio.microphone.enabled);
   CHECK_EQ(back.audio.microphone.device, "Blue Yeti");
-  CHECK(!back.audio.microphone.separate_track);
   CHECK_EQ(back.games.manual_exes[0], "C:\\Games\\retro\\emu.exe");
   CHECK_EQ(back.hotkeys.save_clip, "Ctrl+Shift+F9");
   CHECK(!back.notifications.sound_enabled);
