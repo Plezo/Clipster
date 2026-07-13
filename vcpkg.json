@@ -1,6 +1,6 @@
 {
   "name": "clipster",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "builtin-baseline": "f87344cac03158cbf1467264565f1fd36b382a24",
   "description": "Lightweight background game replay buffer - clip the last N seconds on a hotkey",
   "dependencies": [
