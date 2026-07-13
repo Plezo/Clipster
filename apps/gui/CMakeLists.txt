@@ -1,7 +1,7 @@
 # Clipster.exe — the Qt application (main window + tray, hosts the
 # recording engine).
 
-find_package(Qt6 COMPONENTS Widgets CONFIG REQUIRED)
+find_package(Qt6 COMPONENTS Widgets Network CONFIG REQUIRED)
 
 add_executable(clipster_gui WIN32
   main.cpp
@@ -14,8 +14,13 @@ set_target_properties(clipster_gui PROPERTIES OUTPUT_NAME "Clipster")
 
 target_link_libraries(clipster_gui PRIVATE
   Qt6::Widgets
+  Qt6::Network
   clipster_app_common
   winmm
+)
+
+target_compile_definitions(clipster_gui PRIVATE
+  CLIPSTER_VERSION="${PROJECT_VERSION}"
 )
 
 if(MSVC)
@@ -32,7 +37,8 @@ add_custom_command(TARGET clipster_gui POST_BUILD
 # plugin could be initialized"). Deploy the windeployqt-style layout.
 set(_qt_plugin_src
   "$<IF:$<CONFIG:Debug>,${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/Qt6/plugins,${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/Qt6/plugins>")
-foreach(_plugin_dir platforms styles imageformats)
+# tls carries the Schannel backend QNetworkAccessManager needs for https.
+foreach(_plugin_dir platforms styles imageformats tls)
   add_custom_command(TARGET clipster_gui POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${_qt_plugin_src}/${_plugin_dir}"

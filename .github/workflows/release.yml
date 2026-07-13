@@ -18,6 +18,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The in-app update check compares the running version against the
+      # latest tag, so a tag that doesn't match project(VERSION) would
+      # nag users forever. Fail fast instead.
+      - name: Check tag matches project version
+        shell: pwsh
+        run: |
+          $tagVer = $env:GITHUB_REF_NAME.TrimStart('v')
+          $projVer = (Select-String -Path CMakeLists.txt -Pattern 'VERSION (\d+\.\d+\.\d+)').Matches[0].Groups[1].Value
+          if ($tagVer -ne $projVer) {
+            Write-Output "::error::Tag $env:GITHUB_REF_NAME but CMakeLists.txt says VERSION $projVer. Bump project(VERSION) and re-tag."
+            exit 1
+          }
+
       - name: Checkout vcpkg
         uses: actions/checkout@v4
         with:
@@ -95,7 +108,7 @@ jobs:
           $stage = "stage/Clipster"
           New-Item -ItemType Directory -Force $stage | Out-Null
           Copy-Item "$src/*.exe", "$src/*.dll" $stage
-          foreach ($dir in 'platforms', 'styles', 'imageformats', 'assets') {
+          foreach ($dir in 'platforms', 'styles', 'imageformats', 'tls', 'assets') {
             if (Test-Path "$src/$dir") { Copy-Item "$src/$dir" $stage -Recurse }
           }
           Get-ChildItem $stage -Recurse -Filter *.pdb | Remove-Item

@@ -75,3 +75,8 @@ Settings live at `%APPDATA%\Clipster\settings.json`, shared by all frontends.
   and pastes errors.
 - Hotkey strings ("Ctrl+Del") parse in `hotkey_manager.cpp`; keep the token
   set compatible with Qt `QKeySequence::toString` output.
+- Releasing: bump `project(VERSION ...)` in the root CMakeLists.txt to match
+  the tag before pushing `v*` — the release workflow rejects mismatches
+  (the in-app update check compares that version against the latest tag).
+  The tag builds a portable zip and an Inno Setup installer
+  (`installer/clipster.iss`).

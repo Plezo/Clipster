@@ -32,6 +32,20 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
 
+[Code]
+// Clipster sits in the tray and ignores polite close requests, so an
+// update over a running instance would hit locked files. Kill it first;
+// the [Run] entry offers to relaunch afterwards.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM Clipster.exe /F /T', '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(300);
+  Result := '';
+end;
+
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 

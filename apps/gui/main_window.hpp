@@ -29,6 +29,7 @@ class MainWindow : public QMainWindow {
   QWidget* build_settings_page();
   void setup_tray();
   void register_hotkeys();
+  void check_for_updates();
   void apply_settings();
   void refresh_status();
   void refresh_clips();
@@ -48,6 +49,7 @@ class MainWindow : public QMainWindow {
   QLabel* status_label_ = nullptr;
   QLabel* stats_label_ = nullptr;
   QLabel* hotkey_label_ = nullptr;
+  QLabel* update_label_ = nullptr;
   QPushButton* save_clip_btn_ = nullptr;
   QListWidget* clips_list_ = nullptr;
   SettingsWidget* settings_widget_ = nullptr;

@@ -1,5 +1,7 @@
 #include "main_window.hpp"
 
+#include <QtNetwork>
+
 #include <algorithm>
 #include <vector>
 
@@ -8,7 +10,26 @@
 #include "clipster/win/known_folders.hpp"
 #include "recorder.hpp"
 
+#ifndef CLIPSTER_VERSION
+#define CLIPSTER_VERSION "0.0.0"
+#endif
+
 namespace clipster::gui {
+
+namespace {
+
+// "v0.2.1" / "0.2.1" -> {0, 2, 1}; missing parts compare as 0.
+std::vector<int> parse_version(QString s) {
+  s.remove('v');
+  std::vector<int> out;
+  for (const QString& part : s.split('.')) {
+    out.push_back(part.toInt());
+  }
+  out.resize(3, 0);
+  return out;
+}
+
+}  // namespace
 
 MainWindow::MainWindow(Settings settings, std::filesystem::path settings_path)
     : settings_(std::move(settings)), settings_path_(std::move(settings_path)) {
@@ -83,6 +104,8 @@ MainWindow::MainWindow(Settings settings, std::filesystem::path settings_path)
 
   refresh_status();
   refresh_clips();
+
+  QTimer::singleShot(3000, this, [this] { check_for_updates(); });
 }
 
 MainWindow::~MainWindow() {
@@ -115,6 +138,11 @@ QWidget* MainWindow::build_home_page() {
   hotkey_label_ = new QLabel;
   hotkey_label_->setStyleSheet("color: gray");
   layout->addWidget(hotkey_label_);
+
+  update_label_ = new QLabel;
+  update_label_->setOpenExternalLinks(true);
+  update_label_->setVisible(false);
+  layout->addWidget(update_label_);
 
   auto* buttons = new QHBoxLayout;
   save_clip_btn_ = new QPushButton(tr("Save clip"));
@@ -229,6 +257,39 @@ void MainWindow::register_hotkeys() {
     }
     hotkey_retry_->start(30000);
   }
+}
+
+// One quiet check at startup against the GitHub releases feed; on any
+// failure (offline, rate-limited, no releases) the label simply stays
+// hidden. The link opens the release page — the installer updates in
+// place, so "update" is download + run.
+void MainWindow::check_for_updates() {
+  auto* nam = new QNetworkAccessManager(this);
+  QNetworkRequest request(
+      QUrl(QStringLiteral("https://api.github.com/repos/Plezo/Clipster/releases/latest")));
+  request.setHeader(QNetworkRequest::UserAgentHeader,
+                    QStringLiteral("Clipster/" CLIPSTER_VERSION));
+  request.setTransferTimeout(10000);
+  QNetworkReply* reply = nam->get(request);
+  connect(reply, &QNetworkReply::finished, this, [this, nam, reply] {
+    reply->deleteLater();
+    nam->deleteLater();
+    if (reply->error() != QNetworkReply::NoError) {
+      log::info("update check skipped: {}", reply->errorString().toStdString());
+      return;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+    const QString tag = doc[QStringLiteral("tag_name")].toString();
+    const QString url = doc[QStringLiteral("html_url")].toString();
+    if (tag.isEmpty() || parse_version(tag) <= parse_version(QStringLiteral(CLIPSTER_VERSION))) {
+      return;
+    }
+    log::info("update available: {} (running {})", tag.toStdString(), CLIPSTER_VERSION);
+    update_label_->setText(
+        tr("⬆ <a href=\"%1\">Update available: %2</a> — you have v%3")
+            .arg(url.toHtmlEscaped(), tag.toHtmlEscaped(), QStringLiteral(CLIPSTER_VERSION)));
+    update_label_->setVisible(true);
+  });
 }
 
 void MainWindow::apply_settings() {

@@ -18,6 +18,11 @@ From the [Releases page](../../releases):
 - **`Clipster-*-windows-x64.zip`** — portable: unzip anywhere, run
   `Clipster.exe`.
 
+Updating: run the new installer over the old install — it closes a
+running Clipster, replaces it in place, and offers to relaunch. Clipster
+checks GitHub once at startup and shows an "Update available" link on
+the Home page when there is a newer release.
+
 ## Build from source
 
 Prerequisites (one-time):
