@@ -55,9 +55,15 @@ jobs:
       - name: Configure
         shell: pwsh
         run: |
+          # The VS developer environment points VCPKG_ROOT at VS's bundled
+          # vcpkg; force it back to our pinned checkout.
+          $env:VCPKG_ROOT = Join-Path $env:GITHUB_WORKSPACE 'vcpkg'
+          $ninja = (Get-Command ninja).Source -replace '\\', '/'
           cmake --version
           where.exe cl
-          cmake --preset windows-ci -D "VCPKG_INSTALL_OPTIONS=--clean-after-build" 2>&1 |
+          cmake --preset windows-ci `
+            -D "VCPKG_INSTALL_OPTIONS=--clean-after-build" `
+            -D "CMAKE_MAKE_PROGRAM=$ninja" 2>&1 |
             Tee-Object configure.log
           if ($LASTEXITCODE -ne 0) {
             $tail = (Get-Content configure.log -Tail 40) -join '%0A'
