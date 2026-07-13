@@ -11,9 +11,12 @@ millisecond-fast remux of that buffer — no re-encoding, no quality loss.
 
 ## Download
 
-Grab the latest `Clipster-*-windows-x64.zip` from the
-[Releases page](../../releases), unzip anywhere, run `Clipster.exe`.
-No installer needed.
+From the [Releases page](../../releases):
+
+- **`Clipster-Setup-*.exe`** — one-click installer (per-user, no admin
+  needed; adds a Start menu entry and uninstaller). Recommended.
+- **`Clipster-*-windows-x64.zip`** — portable: unzip anywhere, run
+  `Clipster.exe`.
 
 ## Build from source
 

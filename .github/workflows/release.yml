@@ -98,12 +98,26 @@ jobs:
           foreach ($dir in 'platforms', 'styles', 'imageformats', 'assets') {
             if (Test-Path "$src/$dir") { Copy-Item "$src/$dir" $stage -Recurse }
           }
+          Get-ChildItem $stage -Recurse -Filter *.pdb | Remove-Item
           Copy-Item README.md, LICENSE $stage
           Compress-Archive -Path "stage/Clipster" `
             -DestinationPath "Clipster-$($env:GITHUB_REF_NAME)-windows-x64.zip"
 
+      # Single-file installer from the same staged files (Inno Setup is
+      # preinstalled on the runner image).
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { $iscc = (Get-Command iscc.exe).Source }
+          $ver = $env:GITHUB_REF_NAME.TrimStart('v')
+          & $iscc "/DAppVersion=$ver" "/DStageDir=$PWD\stage\Clipster" `
+            "/O$PWD" "/FClipster-Setup-$($env:GITHUB_REF_NAME)" installer\clipster.iss
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Clipster-*-windows-x64.zip
+          files: |
+            Clipster-Setup-*.exe
+            Clipster-*-windows-x64.zip
           generate_release_notes: true
