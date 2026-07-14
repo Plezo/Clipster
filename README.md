@@ -23,6 +23,11 @@ running Clipster, replaces it in place, and offers to relaunch. Clipster
 checks GitHub once at startup and shows an "Update available" link on
 the Home page when there is a newer release.
 
+> **"Windows protected your PC"?** SmartScreen shows this for any new,
+> not-yet-code-signed app regardless of contents. Click **More info →
+> Run anyway**. You can verify what you run: the source is this repo,
+> and every release is built from it.
+
 ## Build from source
 
 Prerequisites (one-time):
