@@ -1,4 +1,4 @@
-# Build, package and publish a Clipster release from your own machine —
+# Build, package and publish a Clipster release from your own machine -
 # same assets the release workflow produces, without waiting for CI.
 #
 #   .\scripts\release-local.ps1              # build + package + upload
@@ -9,7 +9,7 @@
 # then `gh auth login`. The installer needs Inno Setup 6:
 #   winget install -e --id JRSoftware.InnoSetup
 #
-# The version comes from project(VERSION ...) in CMakeLists.txt — bump it
+# The version comes from project(VERSION ...) in CMakeLists.txt - bump it
 # there first. Publishing the release creates tag v<version>; the CI
 # release workflow sees the assets already exist and skips the rebuild.
 
@@ -35,7 +35,7 @@ if (-not $SkipBuild) {
 
 $src = 'build\windows\apps\gui\RelWithDebInfo'
 if (-not (Test-Path "$src\Clipster.exe")) {
-  throw "No build at $src — run without -SkipBuild first"
+  throw "No build at $src - run without -SkipBuild first"
 }
 
 $out = 'build\release-stage'
@@ -63,7 +63,7 @@ if (Test-Path $iscc) {
   $assets += "$out\Clipster-Setup-$tag.exe"
   Write-Host "Created $out\Clipster-Setup-$tag.exe"
 } else {
-  Write-Warning 'Inno Setup not found — skipping installer. winget install -e --id JRSoftware.InnoSetup'
+  Write-Warning 'Inno Setup not found - skipping installer. winget install -e --id JRSoftware.InnoSetup'
 }
 $assets += $zip
 
