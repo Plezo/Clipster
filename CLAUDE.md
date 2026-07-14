@@ -79,4 +79,6 @@ Settings live at `%APPDATA%\Clipster\settings.json`, shared by all frontends.
   the tag before pushing `v*` — the release workflow rejects mismatches
   (the in-app update check compares that version against the latest tag).
   The tag builds a portable zip and an Inno Setup installer
-  (`installer/clipster.iss`).
+  (`installer/clipster.iss`). Faster path: `scripts/release-local.ps1`
+  builds/packages/publishes from the dev machine via `gh`; the release
+  workflow's precheck job then skips the cloud rebuild.
