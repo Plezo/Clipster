@@ -86,9 +86,14 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
 }
 
 # Update the release if the tag already exists, otherwise create it
-# (which also creates the tag on the current commit).
-gh release view $tag *> $null
-if ($LASTEXITCODE -eq 0) {
+# (which also creates the tag on the current commit). gh reports "not
+# found" on stderr, which PS 5.1 escalates to a terminating error under
+# ErrorActionPreference=Stop unless relaxed around the probe.
+$ErrorActionPreference = 'Continue'
+cmd /c "gh release view $tag >NUL 2>&1"
+$releaseExists = ($LASTEXITCODE -eq 0)
+$ErrorActionPreference = 'Stop'
+if ($releaseExists) {
   gh release upload $tag @assets --clobber
 } else {
   gh release create $tag @assets --title $tag --generate-notes
