@@ -27,6 +27,12 @@ $tag = "v$ver"
 Write-Host "Packaging Clipster $tag" -ForegroundColor Cyan
 
 if (-not $SkipBuild) {
+  # A running (tray) Clipster keeps its exe locked and fails the link.
+  if (Get-Process Clipster -ErrorAction SilentlyContinue) {
+    Write-Host 'Closing running Clipster so the build can replace it...'
+    Stop-Process -Name Clipster -Force
+    Start-Sleep -Milliseconds 500
+  }
   cmake --build --preset windows-release --parallel
   if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
   ctest --preset windows
