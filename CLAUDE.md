@@ -64,6 +64,10 @@ Settings live at `%APPDATA%\Clipster\settings.json`, shared by all frontends.
 
 ## Conventions & gotchas
 
+- **Never commit to `main`.** Every change starts with
+  `git switch -c <feat|fix|docs|chore>/<topic>` off an up-to-date `main`
+  and lands through a PR; releases are prepared on `release/vX.Y.Z`.
+  Full workflow in `CONTRIBUTING.md` — read it before tagging anything.
 - C++20, MSVC `/W4` clean and GCC `-Wall -Wextra -Wpedantic` clean.
 - Timestamps: everything is QPC-derived microseconds (WGC
   `SystemRelativeTime`, WASAPI QPC positions, `steady_clock`) so A/V share
@@ -88,10 +92,15 @@ Settings live at `%APPDATA%\Clipster\settings.json`, shared by all frontends.
   `.github/workflows/release.yml`; keep them in sync. qtmultimedia is
   pinned to features `ffmpeg,widgets` (no defaults) so the ffmpeg feature
   set stays LGPL-only.
-- Releasing: bump `project(VERSION ...)` in the root CMakeLists.txt to match
-  the tag before pushing `v*` — the release workflow rejects mismatches
-  (the in-app update check compares that version against the latest tag).
-  The tag builds a portable zip and an Inno Setup installer
-  (`installer/clipster.iss`). Faster path: `scripts/release-local.ps1`
-  builds/packages/publishes from the dev machine via `gh`; the release
-  workflow's precheck job then skips the cloud rebuild.
+- Releasing (details and the branch flow in `CONTRIBUTING.md`): bump
+  `project(VERSION ...)` in the root CMakeLists.txt to match the tag —
+  the release workflow rejects mismatches (the in-app update check
+  compares that version against the latest tag). The tag builds a
+  portable zip and an Inno Setup installer (`installer/clipster.iss`).
+  Faster path: `scripts/release-local.ps1` builds/packages/publishes from
+  the dev machine via `gh`; the release workflow's precheck job then
+  skips the cloud rebuild. Publish from `main` after the release branch
+  merges — `gh release create` tags the current commit, so tagging the
+  branch would strand the tag if the PR is squashed. Both assets (zip and
+  setup exe) must be on the release page; a missing Inno Setup only
+  warns, and the precheck skips CI as soon as one asset exists.

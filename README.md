@@ -104,7 +104,9 @@ sliding window is a GOP-aligned ring buffer of already-encoded packets —
 RAM cost ≈ `clip_seconds × bitrate / 8` (30 s @ 20 Mbps ≈ 75 MB).
 Layout: `core/` (platform-agnostic logic, unit-tested), `media/` (FFmpeg),
 `platform/win/` (WGC/WASAPI/hotkeys), `apps/` (tray, settings UI, CLI).
-See `CLAUDE.md` for developer docs. Core tests run anywhere:
+See `CLAUDE.md` for developer docs and `CONTRIBUTING.md` for the branch,
+PR and release workflow (`main` is always releasable; nothing lands on it
+directly). Core tests run anywhere:
 `cmake --preset linux-core && cmake --build --preset linux-core && ctest --preset linux-core`.
 
 ## License
