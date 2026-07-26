@@ -34,6 +34,14 @@ class SessionManager {
     std::function<void(const std::string& message)> on_error;
   };
 
+  // A whitelisted process that is currently alive (recorded or not).
+  struct RunningGame {
+    DWORD pid = 0;
+    std::string exe_path;
+    std::string name;  // exe stem, same display name sessions use
+    bool recording = false;
+  };
+
   SessionManager(Settings settings, Callbacks callbacks);
   ~SessionManager();
 
@@ -47,6 +55,14 @@ class SessionManager {
   // Thread-safe; no-op while idle.
   void save_clip();
 
+  // All running whitelisted games, oldest first. Thread-safe.
+  std::vector<RunningGame> running_games() const;
+
+  // Stops the current session (if any) and records this process instead.
+  // Thread-safe; no-op if the pid is not a running whitelisted game or is
+  // already the one being recorded.
+  void switch_to(DWORD pid);
+
   bool is_recording() const;
   std::string current_game() const;   // empty while idle
   std::string stats() const;          // empty while idle
@@ -55,7 +71,13 @@ class SessionManager {
 
  private:
   struct Event {
-    enum class Kind { GameStarted, GameStopped, EncoderFailed, WindowClosed } kind;
+    enum class Kind {
+      GameStarted,
+      GameStopped,
+      EncoderFailed,
+      WindowClosed,
+      SwitchRequested
+    } kind;
     DWORD pid = 0;
     std::string exe_path;
   };
@@ -96,6 +118,15 @@ class SessionManager {
 
   mutable std::mutex session_mutex_;
   std::unique_ptr<Session> session_;
+
+  // Every whitelisted process currently alive, kept even while another
+  // game owns the session — this is what switch_to() picks from.
+  struct RunningProcess {
+    DWORD pid = 0;
+    std::string exe_path;
+  };
+  mutable std::mutex running_mutex_;
+  std::vector<RunningProcess> running_;
 
   // Control thread state (touched only on the control thread).
   std::vector<Candidate> candidates_;

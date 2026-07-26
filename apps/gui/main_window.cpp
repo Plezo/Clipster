@@ -43,10 +43,13 @@ MainWindow::MainWindow(Settings settings, std::filesystem::path settings_path)
   }
   setWindowIcon(app_icon_);
 
-  auto* tabs = new QTabWidget;
-  tabs->addTab(build_home_page(), tr("Home"));
-  tabs->addTab(build_settings_page(), tr("Settings"));
-  setCentralWidget(tabs);
+  tabs_ = new QTabWidget;
+  tabs_->addTab(build_home_page(), tr("Home"));
+  clips_page_ = new ClipsPage(&settings_);
+  clips_page_->request_refresh = [this] { refresh_clips(); };
+  tabs_->addTab(clips_page_, tr("Clips"));
+  tabs_->addTab(build_settings_page(), tr("Settings"));
+  setCentralWidget(tabs_);
   statusBar();  // create it so messages have somewhere to go
 
   setup_tray();
@@ -161,14 +164,23 @@ QWidget* MainWindow::build_home_page() {
   });
   buttons->addWidget(save_clip_btn_);
   buttons->addWidget(open_folder);
+  switch_btn_ = new QPushButton(tr("Record another game…"));
+  switch_btn_->setVisible(false);  // shown when a second whitelisted game runs
+  connect(switch_btn_, &QPushButton::clicked, this, [this] {
+    QMenu menu(this);
+    populate_game_menu(&menu);
+    menu.exec(switch_btn_->mapToGlobal(QPoint(0, switch_btn_->height())));
+  });
+  buttons->addWidget(switch_btn_);
   buttons->addStretch();
   layout->addLayout(buttons);
 
   layout->addSpacing(8);
-  layout->addWidget(new QLabel(tr("Recent clips (double-click to play):")));
+  layout->addWidget(new QLabel(tr("Recent clips (double-click to watch / edit):")));
   clips_list_ = new QListWidget;
-  connect(clips_list_, &QListWidget::itemDoubleClicked, this, [](QListWidgetItem* item) {
-    QDesktopServices::openUrl(QUrl::fromLocalFile(item->data(Qt::UserRole).toString()));
+  connect(clips_list_, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem* item) {
+    clips_page_->open_clip(item->data(Qt::UserRole).toString());
+    tabs_->setCurrentWidget(clips_page_);
   });
   layout->addWidget(clips_list_, 1);
   return page;
@@ -203,6 +215,12 @@ void MainWindow::setup_tray() {
     activateWindow();
   });
   menu->addAction(tr("Save clip"), this, [this] { manager_->save_clip(); });
+  auto* game_menu = menu->addMenu(tr("Record game"));
+  connect(menu, &QMenu::aboutToShow, this, [this, game_menu] {
+    game_menu->clear();
+    populate_game_menu(game_menu);
+    game_menu->setEnabled(!game_menu->isEmpty());
+  });
   menu->addSeparator();
   menu->addAction(tr("Quit"), this, [this] { quit_app(); });
   tray_->setContextMenu(menu);
@@ -309,6 +327,23 @@ void MainWindow::apply_settings() {
       6000);
 }
 
+// Lists every running whitelisted game; the one being recorded is checked
+// and disabled, picking another calls switch_to(). Shared by the tray
+// submenu and the Home-page button.
+void MainWindow::populate_game_menu(QMenu* menu) {
+  for (const auto& g : manager_->running_games()) {
+    auto* act = menu->addAction(QString::fromStdString(g.name));
+    act->setCheckable(true);
+    act->setChecked(g.recording);
+    act->setEnabled(!g.recording);
+    const DWORD pid = g.pid;
+    connect(act, &QAction::triggered, this, [this, pid] {
+      manager_->switch_to(pid);
+      statusBar()->showMessage(tr("Switching recording…"), 3000);
+    });
+  }
+}
+
 void MainWindow::refresh_status() {
   const bool recording = manager_->is_recording();
   if (recording) {
@@ -327,6 +362,10 @@ void MainWindow::refresh_status() {
     tray_->setIcon(state_icon(false));
   }
   save_clip_btn_->setEnabled(recording);
+
+  const auto games = manager_->running_games();
+  switch_btn_->setVisible(std::any_of(games.begin(), games.end(),
+                                      [](const auto& g) { return !g.recording; }));
 }
 
 std::filesystem::path MainWindow::clips_dir() const {
@@ -362,13 +401,18 @@ void MainWindow::refresh_clips() {
   }
 
   clips_list_->clear();
+  QVector<QPair<QString, QString>> page_entries;
   for (const Entry& e : entries) {
     const auto rel = std::filesystem::relative(e.path, dir, ec);
-    auto* item = new QListWidgetItem(
-        QString::fromStdWString(ec ? e.path.filename().wstring() : rel.wstring()));
-    item->setData(Qt::UserRole, QString::fromStdWString(e.path.wstring()));
+    const QString label =
+        QString::fromStdWString(ec ? e.path.filename().wstring() : rel.wstring());
+    const QString path = QString::fromStdWString(e.path.wstring());
+    auto* item = new QListWidgetItem(label);
+    item->setData(Qt::UserRole, path);
     clips_list_->addItem(item);
+    page_entries.push_back({label, path});
   }
+  clips_page_->set_clips(page_entries);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {

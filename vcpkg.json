@@ -10,6 +10,15 @@
       "platform": "windows"
     },
     {
+      "name": "qtmultimedia",
+      "default-features": false,
+      "features": [
+        "ffmpeg",
+        "widgets"
+      ],
+      "platform": "windows"
+    },
+    {
       "name": "ffmpeg",
       "default-features": false,
       "features": [

@@ -39,7 +39,10 @@ g++ -std=c++20 -Wall -Wextra -Wpedantic -Icore/include -I<json-include> -Itests 
   `GameMatcher` (path rules), Steam `libraryfolders.vdf` parser.
 - `media/` — FFmpeg wrapper. `VideoEncoder` probes NVENC → AMF → QSV →
   OpenH264 (never x264: LGPL cleanliness). `write_clip` remuxes ring-buffer
-  packets to MP4 (temp file + rename; `+faststart`).
+  packets to MP4 (temp file + rename; `+faststart`). `export_edit`
+  (clip_editor) trims/crops an existing clip: pure remux for cut-only
+  (start snaps back to a keyframe), decode → crop → `VideoEncoder` when
+  cropping; audio is always stream-copied.
 - `platform/win/` — WGC capture, WASAPI audio (desktop loopback + per-process
   loopback), global hotkeys, process watcher, Steam locator. All UTF-8 at the
   API surface (`win::widen`/`narrow` at Win32 boundaries).
@@ -48,7 +51,9 @@ g++ -std=c++20 -Wall -Wextra -Wpedantic -Icore/include -I<json-include> -Itests 
   AAC), `SessionManager` (game detection -> session lifecycle on its own
   control thread; UI-agnostic callbacks).
 - `apps/gui/` — `Clipster.exe`, the product: Qt main window (status,
-  recent clips, settings pages) hosting the engine; minimizes to tray,
+  recent clips, a Clips tab that plays and trim/crop-edits clips via
+  Qt Multimedia's ffmpeg backend, settings pages) hosting the engine;
+  minimizes to tray,
   `--minimized` for autostart, logs to `%APPDATA%\Clipster\clipster.log`.
 - `apps/cli/` — `clipster-cli.exe`, dev/test harness.
 
@@ -75,6 +80,11 @@ Settings live at `%APPDATA%\Clipster\settings.json`, shared by all frontends.
   and pastes errors.
 - Hotkey strings ("Ctrl+Del") parse in `hotkey_manager.cpp`; keep the token
   set compatible with Qt `QKeySequence::toString` output.
+- The Qt plugin dir list exists twice — the deploy loop in
+  `apps/gui/CMakeLists.txt` and the Package step of
+  `.github/workflows/release.yml`; keep them in sync. qtmultimedia is
+  pinned to features `ffmpeg,widgets` (no defaults) so the ffmpeg feature
+  set stays LGPL-only.
 - Releasing: bump `project(VERSION ...)` in the root CMakeLists.txt to match
   the tag before pushing `v*` — the release workflow rejects mismatches
   (the in-app update check compares that version against the latest tag).

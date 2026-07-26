@@ -127,7 +127,7 @@ jobs:
           $stage = "stage/Clipster"
           New-Item -ItemType Directory -Force $stage | Out-Null
           Copy-Item "$src/*.exe", "$src/*.dll" $stage
-          foreach ($dir in 'platforms', 'styles', 'imageformats', 'tls', 'assets') {
+          foreach ($dir in 'platforms', 'styles', 'imageformats', 'tls', 'multimedia', 'assets') {
             if (Test-Path "$src/$dir") { Copy-Item "$src/$dir" $stage -Recurse }
           }
           Get-ChildItem $stage -Recurse -Filter *.pdb | Remove-Item

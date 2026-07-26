@@ -58,8 +58,18 @@ status and your recent clips; the Settings page has everything else:
 2. **Something cool happens → press `Ctrl+Del`** (or `Back+RB` on a
    controller, or the Save clip button). The last 30 seconds
    (configurable) are saved to `Videos\Clipster\<Game>\` with a chime,
-   and appear in the recent-clips list — double-click to play.
+   and appear in the recent-clips list — double-click to open it in the
+   **Clips** tab.
 3. **Quit the game.** Recording stops and the buffer is freed.
+
+The **Clips** tab plays your clips in-app and does quick edits: drag the
+handles on the timeline to cut a clip down (e.g. keep just the last
+8 seconds — the video previews the frame under a handle while you drag),
+and drag a box on the video in crop mode to crop it. *Export* asks for a
+name and writes the result as a new file next to the original — a cut on
+its own is a lossless remux (the start snaps to the previous keyframe);
+cropping re-encodes with your configured quality settings. Clips can be
+renamed (F2) or deleted from the list.
 
 Closing the window minimizes Clipster to the system tray so it keeps
 recording in the background; tick *Start with Windows* in Settings and

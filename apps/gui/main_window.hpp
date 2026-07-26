@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <memory>
 
+#include "clips_page.hpp"
 #include "clipster/settings.hpp"
 #include "clipster/win/gamepad_hotkey.hpp"
 #include "clipster/win/hotkey_manager.hpp"
@@ -33,6 +34,7 @@ class MainWindow : public QMainWindow {
   void apply_settings();
   void refresh_status();
   void refresh_clips();
+  void populate_game_menu(QMenu* menu);
   void quit_app();
   std::filesystem::path clips_dir() const;
   QIcon state_icon(bool recording) const;
@@ -51,7 +53,10 @@ class MainWindow : public QMainWindow {
   QLabel* hotkey_label_ = nullptr;
   QLabel* update_label_ = nullptr;
   QPushButton* save_clip_btn_ = nullptr;
+  QPushButton* switch_btn_ = nullptr;
   QListWidget* clips_list_ = nullptr;
+  QTabWidget* tabs_ = nullptr;
+  ClipsPage* clips_page_ = nullptr;
   SettingsWidget* settings_widget_ = nullptr;
   QCheckBox* autostart_ = nullptr;
   QSystemTrayIcon* tray_ = nullptr;

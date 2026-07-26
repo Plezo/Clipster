@@ -2,6 +2,8 @@
 
 #include <objbase.h>
 
+#include <algorithm>
+
 #include "clipster/logging.hpp"
 #include "clipster/win/steam_locator.hpp"
 #include "clipster/win/window_finder.hpp"
@@ -38,11 +40,24 @@ SessionManager::SessionManager(Settings settings, Callbacks callbacks)
   win::ProcessWatcher::Callbacks watcher_callbacks;
   watcher_callbacks.on_started = [this](DWORD pid, const std::string& exe) {
     if (auto matcher = matcher_.load(); matcher && matcher->is_game(exe)) {
+      {
+        std::lock_guard lock(running_mutex_);
+        running_.push_back({pid, exe});
+      }
       post_event({Event::Kind::GameStarted, pid, exe});
     }
   };
   watcher_callbacks.on_stopped = [this](DWORD pid, const std::string& exe) {
-    if (auto matcher = matcher_.load(); matcher && matcher->is_game(exe)) {
+    bool was_running = false;
+    {
+      std::lock_guard lock(running_mutex_);
+      was_running =
+          std::erase_if(running_, [&](const RunningProcess& p) { return p.pid == pid; }) > 0;
+    }
+    // was_running keeps stops delivered even if the whitelist changed
+    // after the game launched.
+    auto matcher = matcher_.load();
+    if (was_running || (matcher && matcher->is_game(exe))) {
       post_event({Event::Kind::GameStopped, pid, exe});
     }
   };
@@ -104,6 +119,38 @@ void SessionManager::save_clip() {
   if (session_) {
     session_->recorder->save_clip();
   }
+}
+
+std::vector<SessionManager::RunningGame> SessionManager::running_games() const {
+  DWORD recording_pid = 0;
+  {
+    std::lock_guard lock(session_mutex_);
+    if (session_) {
+      recording_pid = session_->pid;
+    }
+  }
+  std::vector<RunningGame> out;
+  std::lock_guard lock(running_mutex_);
+  out.reserve(running_.size());
+  for (const RunningProcess& p : running_) {
+    out.push_back({p.pid, p.exe_path, std::filesystem::path(p.exe_path).stem().string(),
+                   p.pid == recording_pid});
+  }
+  return out;
+}
+
+void SessionManager::switch_to(DWORD pid) {
+  std::string exe;
+  {
+    std::lock_guard lock(running_mutex_);
+    const auto it = std::find_if(running_.begin(), running_.end(),
+                                 [&](const RunningProcess& p) { return p.pid == pid; });
+    if (it == running_.end()) {
+      return;
+    }
+    exe = it->exe_path;
+  }
+  post_event({Event::Kind::SwitchRequested, pid, std::move(exe)});
 }
 
 bool SessionManager::is_recording() const {
@@ -189,6 +236,12 @@ void SessionManager::handle_event(const Event& event) {
       }
       if (ours) {
         stop_session(/*game_exited=*/true);
+        // Fall back to whatever whitelisted game is still running (e.g. an
+        // idle game that lost the session to the one that just exited).
+        std::lock_guard lock(running_mutex_);
+        for (const RunningProcess& p : running_) {
+          add_candidate(p.pid, p.exe_path);
+        }
       }
       break;
     }
@@ -214,6 +267,20 @@ void SessionManager::handle_event(const Event& event) {
       log::info("capture window closed; waiting for a new window from {}", exe);
       stop_session(/*game_exited=*/false);
       add_candidate(event.pid, exe);  // GameStopped will clear it if the process died
+      break;
+    }
+    case Event::Kind::SwitchRequested: {
+      {
+        std::lock_guard lock(session_mutex_);
+        if (session_ && session_->pid == event.pid) {
+          return;  // already recording it
+        }
+      }
+      log::info("switching recording to {}", event.exe_path);
+      stop_session(/*game_exited=*/false);
+      candidates_.clear();  // the user picked a winner; drop pending games
+      add_candidate(event.pid, event.exe_path);
+      try_begin_capture();
       break;
     }
   }
