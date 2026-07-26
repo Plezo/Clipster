@@ -55,7 +55,8 @@ static json to_json(const Settings& s) {
         {"bitrate_kbps", s.audio.bitrate_kbps},
         {"microphone",
          {{"enabled", s.audio.microphone.enabled},
-          {"device", s.audio.microphone.device}}}}},
+          {"device", s.audio.microphone.device},
+          {"separate_track", s.audio.microphone.separate_track}}}}},
       {"games",
        {{"auto_detect_steam", s.games.auto_detect_steam},
         {"watched_folders", s.games.watched_folders},
@@ -94,6 +95,7 @@ static void from_json(const json& j, Settings& s) {
     if (auto mic = it->find("microphone"); mic != it->end() && mic->is_object()) {
       read(*mic, "enabled", s.audio.microphone.enabled);
       read(*mic, "device", s.audio.microphone.device);
+      read(*mic, "separate_track", s.audio.microphone.separate_track);
     }
   }
   if (auto it = j.find("games"); it != j.end() && it->is_object()) {

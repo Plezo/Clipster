@@ -40,12 +40,16 @@ struct ClipSettings {
 //
 // Implemented with WASAPI process loopback on Windows (10 2004+); on older
 // systems the app degrades to "desktop" with a warning.
-// The microphone is always written as its own audio track (titled
-// "Microphone") so voice can be balanced or muted after the fact.
+// The microphone is mixed into the clip's main audio track by default:
+// MP4 players (including browsers, Discord and most social uploads) play
+// only the first audio track, so voice on its own track is inaudible
+// everywhere except an editor. `separate_track` restores that second
+// track (titled "Microphone") for people who want to rebalance it later.
 struct MicrophoneSettings {
   bool enabled = false;
   // Friendly-name substring, or "default" for the system communications mic.
   std::string device = "default";
+  bool separate_track = false;
 };
 
 struct AudioSettings {

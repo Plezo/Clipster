@@ -244,12 +244,26 @@ QWidget* SettingsWidget::build_audio_tab() {
   }
   mic_form->addRow(tr("Device:"), mic_device_);
 
+  mic_separate_track_ = new QCheckBox(tr("Keep my voice on a separate audio track"));
+  mic_separate_track_->setChecked(initial_.audio.microphone.separate_track);
+  mic_form->addRow(QString(), mic_separate_track_);
+
   auto* mic_hint = new QLabel(
-      tr("Recorded as a separate audio track, so you can rebalance or mute "
-         "your voice in an editor."));
+      tr("Your voice is mixed into the clip's main audio track so it plays "
+         "everywhere. A separate track keeps it isolated for editing, but "
+         "most players — browsers, Discord, social uploads — only play the "
+         "first track, so your voice will be silent there."));
   mic_hint->setStyleSheet("color: gray");
   mic_hint->setWordWrap(true);
   mic_form->addRow(QString(), mic_hint);
+
+  const auto update_mic_rows = [this] {
+    const bool on = mic_enabled_->isChecked();
+    mic_device_->setEnabled(on);
+    mic_separate_track_->setEnabled(on);
+  };
+  connect(mic_enabled_, &QCheckBox::toggled, this, update_mic_rows);
+  update_mic_rows();
 
   layout->addWidget(mic_group);
 
@@ -362,6 +376,7 @@ Settings SettingsWidget::collect() const {
   s.audio.microphone.enabled = mic_enabled_->isChecked();
   s.audio.microphone.device =
       mic_device_->currentIndex() == 0 ? "default" : mic_device_->currentText().toStdString();
+  s.audio.microphone.separate_track = mic_separate_track_->isChecked();
 
   s.games.auto_detect_steam = steam_->isChecked();
   s.games.watched_folders = from_list_widget(folders_list_);

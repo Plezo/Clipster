@@ -49,7 +49,10 @@ g++ -std=c++20 -Wall -Wextra -Wpedantic -Icore/include -I<json-include> -Itests 
 - `apps/common/` — the engine shared by frontends: `Recorder` (video ring
   buffer + clip writing), `AudioPipeline`/`AudioMixer` (per-app WASAPI ->
   AAC), `SessionManager` (game detection -> session lifecycle on its own
-  control thread; UI-agnostic callbacks).
+  control thread; UI-agnostic callbacks). The mic is just another mixer
+  source so it lands in the main track — a second audio track is silent in
+  every player that only decodes track 0; `microphone.separate_track` opts
+  back into the isolated "Microphone" track.
 - `apps/gui/` — `Clipster.exe`, the product: Qt main window (status,
   recent clips, a Clips tab that plays and trim/crop-edits clips via
   Qt Multimedia's ffmpeg backend, settings pages) hosting the engine;

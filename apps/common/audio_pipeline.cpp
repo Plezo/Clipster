@@ -5,6 +5,7 @@
 #include "audio_mixer.hpp"
 #include "clipster/logging.hpp"
 #include "clipster/media/audio_encoder.hpp"
+#include "clipster/media/audio_resampler.hpp"
 #include "clipster/win/audio_capture.hpp"
 #include "clipster/win/process_utils.hpp"
 #include "recorder.hpp"
@@ -23,7 +24,11 @@ struct AudioPipeline::Impl {
   std::vector<std::unique_ptr<win::DesktopLoopbackCapture>> desktop_captures;
   std::vector<std::unique_ptr<win::ProcessLoopbackCapture>> process_captures;
   std::unique_ptr<win::MicrophoneCapture> mic_capture;
-  std::unique_ptr<media::AudioEncoder> mic_encoder;  // only for the separate-track path
+  std::unique_ptr<media::AudioEncoder> mic_encoder;      // only for the separate-track path
+  std::unique_ptr<media::AudioResampler> mic_resampler;  // only when merged, if formats differ
+  size_t mic_source = 0;                                 // mixer source index when merged
+  int mix_rate = 0;
+  int mix_channels = 0;
   bool started = false;
   bool stopped = false;
   bool offset_logged = false;
@@ -56,6 +61,26 @@ struct AudioPipeline::Impl {
   // Where microphone chunks go; chosen after the capture's format is
   // known (own encoder for the separate track, mixer source when merged).
   std::function<void(const win::AudioChunk&)> mic_sink;
+
+  // Merged path: the mic becomes one more mixer source, so it lands in the
+  // main track alongside game/app audio. The mixer only accepts its own
+  // format, hence the resampler for mics that do not run at the mix rate.
+  void submit_mic_to_mixer(const win::AudioChunk& c) {
+    if (!mic_resampler) {
+      mixer->submit(mic_source, c);
+      return;
+    }
+    const std::vector<float>& converted = mic_resampler->convert(c.samples, c.frame_count);
+    if (converted.empty()) {
+      return;  // swr still buffering
+    }
+    win::AudioChunk out = c;
+    out.samples = converted.data();
+    out.frame_count = static_cast<int>(converted.size() / static_cast<size_t>(mix_channels));
+    out.channels = mix_channels;
+    out.sample_rate = mix_rate;
+    mixer->submit(mic_source, out);
+  }
 
   // Same rebase for the separate microphone track. Mic capture is a
   // continuous stream, so sample-count-derived pts stays gapless.
@@ -115,14 +140,20 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
   // encoder directly would splice silent periods out of the timeline and
   // make audio drift ahead of video.
   const auto make_mixer = [&](int rate, int channels) {
+    im.mix_rate = rate;
+    im.mix_channels = channels;
     im.mixer = std::make_unique<AudioMixer>(
         rate, channels, [imp](const float* samples, int frames, int64_t pts_qpc_us) {
           imp->encode_on_timeline(samples, frames, pts_qpc_us);
         });
   };
 
-  // Optional microphone, always on its own AAC track so voice can be
-  // balanced or muted in an editor.
+  // Optional microphone. Mixed into the main track by default — a second
+  // audio track is inaudible in every player that only decodes track 0 —
+  // and put on its own AAC track when the user asks for one.
+  //
+  // Must run after make_mixer(): the merged path adds a mixer source, and
+  // all sources have to exist before start().
   const auto setup_microphone = [&] {
     if (!settings.audio.microphone.enabled) {
       return;
@@ -138,6 +169,23 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
         &mic_error);
     if (!cap) {
       log::warn("audio: microphone disabled: {}", mic_error);
+      return;
+    }
+
+    if (!settings.audio.microphone.separate_track) {
+      if (cap->sample_rate() != im.mix_rate || cap->channels() != im.mix_channels) {
+        std::string res_error;
+        im.mic_resampler = media::AudioResampler::create(cap->sample_rate(), cap->channels(),
+                                                         im.mix_rate, im.mix_channels, &res_error);
+        if (!im.mic_resampler) {
+          log::warn("audio: microphone disabled: {}", res_error);
+          return;
+        }
+      }
+      im.mic_source = im.mixer->add_source();
+      im.mic_sink = [imp](const win::AudioChunk& c) { imp->submit_mic_to_mixer(c); };
+      im.mic_capture = std::move(cap);
+      log::info("audio: microphone mixed into the main track");
       return;
     }
 
@@ -157,6 +205,7 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
     im.mic_sink = [imp](const win::AudioChunk& c) { imp->encode_mic_on_timeline(c); };
     recorder.set_microphone_info(im.mic_encoder->stream_info());
     im.mic_capture = std::move(cap);
+    log::info("audio: microphone on its own track");
   };
 
   if (mode == "desktop" || mode == "desktop_exclude") {

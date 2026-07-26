@@ -13,7 +13,9 @@ endif()
 add_library(clipster_media STATIC
   src/video_encoder.cpp
   src/audio_encoder.cpp
+  src/audio_resampler.cpp
   src/clip_writer.cpp
+  src/clip_editor.cpp
 )
 
 target_include_directories(clipster_media PUBLIC include)

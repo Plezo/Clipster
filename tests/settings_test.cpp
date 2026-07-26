@@ -23,6 +23,7 @@ TEST(settings_round_trip_through_json) {
   s.audio.exclude_apps = {"Spotify.exe", "chrome.exe"};
   s.audio.microphone.enabled = true;
   s.audio.microphone.device = "Blue Yeti";
+  s.audio.microphone.separate_track = true;
   s.games.manual_exes = {"C:\\Games\\retro\\emu.exe"};
   s.hotkeys.save_clip = "Ctrl+Shift+F9";
   s.notifications.sound_enabled = false;
@@ -35,10 +36,20 @@ TEST(settings_round_trip_through_json) {
   CHECK_EQ(back.audio.exclude_apps.size(), 2u);
   CHECK(back.audio.microphone.enabled);
   CHECK_EQ(back.audio.microphone.device, "Blue Yeti");
+  CHECK(back.audio.microphone.separate_track);
   CHECK_EQ(back.games.manual_exes[0], "C:\\Games\\retro\\emu.exe");
   CHECK_EQ(back.hotkeys.save_clip, "Ctrl+Shift+F9");
   CHECK(!back.notifications.sound_enabled);
   CHECK_EQ(back.notifications.sound_file, "C:\\sounds\\ding.wav");
+}
+
+TEST(settings_microphone_defaults_to_the_mixed_track) {
+  // Settings written before the option existed must keep playing in every
+  // player: no "separate_track" key means mixed, not a silent second track.
+  const Settings s = Settings::from_json_string(
+      R"({"version": 1, "audio": {"microphone": {"enabled": true, "device": "default"}}})");
+  CHECK(s.audio.microphone.enabled);
+  CHECK(!s.audio.microphone.separate_track);
 }
 
 TEST(settings_missing_and_unknown_keys_are_tolerated) {
