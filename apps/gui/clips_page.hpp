@@ -102,6 +102,8 @@ class ClipsPage : public QWidget {
   void set_clips(const QVector<QPair<QString, QString>>& clips);
   // Select the clip in the list (if present) and start playing it.
   void open_clip(const QString& path);
+  // Stop the sound following the user out of the window (close to tray).
+  void pause_playback();
 
   std::function<void()> request_refresh;  // ask the owner to rescan the clips dir
 

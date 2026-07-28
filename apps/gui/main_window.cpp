@@ -420,6 +420,9 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     event->accept();
     return;
   }
+  // Closing to the tray hides the video, so a clip that keeps playing is
+  // just a disembodied voice over the game.
+  clips_page_->pause_playback();
   hide();
   event->ignore();
   if (!tray_hint_shown_) {

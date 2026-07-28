@@ -538,6 +538,12 @@ void ClipsPage::unload_current() {
   update_export_ui();
 }
 
+void ClipsPage::pause_playback() {
+  if (player_->playbackState() == QMediaPlayer::PlayingState) {
+    player_->pause();
+  }
+}
+
 void ClipsPage::toggle_play() {
   if (current_path_.isEmpty()) {
     return;
