@@ -12,6 +12,7 @@ if(NOT nlohmann_json_FOUND)
 endif()
 
 add_library(clipster_core STATIC
+  src/audio_downmix.cpp
   src/logging.cpp
   src/ring_buffer.cpp
   src/settings.cpp

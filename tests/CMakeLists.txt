@@ -1,5 +1,6 @@
 add_executable(clipster_tests
   test_main.cpp
+  audio_downmix_test.cpp
   ring_buffer_test.cpp
   settings_test.cpp
   game_matcher_test.cpp
