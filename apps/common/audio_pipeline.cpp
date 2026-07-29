@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "audio_mixer.hpp"
+#include "clipster/audio_downmix.hpp"
 #include "clipster/logging.hpp"
 #include "clipster/media/audio_encoder.hpp"
 #include "clipster/media/audio_resampler.hpp"
@@ -25,7 +26,8 @@ struct AudioPipeline::Impl {
   std::vector<std::unique_ptr<win::ProcessLoopbackCapture>> process_captures;
   std::unique_ptr<win::MicrophoneCapture> mic_capture;
   std::unique_ptr<media::AudioEncoder> mic_encoder;      // only for the separate-track path
-  std::unique_ptr<media::AudioResampler> mic_resampler;  // only when merged, if formats differ
+  std::unique_ptr<MonoDownmixer> mic_downmix;            // only for multi-channel mics
+  std::unique_ptr<media::AudioResampler> mic_resampler;  // only when merged, if rates differ
   size_t mic_source = 0;                                 // mixer source index when merged
   int mix_rate = 0;
   int mix_channels = 0;
@@ -62,10 +64,28 @@ struct AudioPipeline::Impl {
   // known (own encoder for the separate track, mixer source when merged).
   std::function<void(const win::AudioChunk&)> mic_sink;
 
+  // Voice is a centred, single-channel source: fold multi-channel mics down
+  // before anything else. Windows routinely exposes a mono capsule as a
+  // two-channel endpoint that only fills the left channel, which would
+  // otherwise put the whole voice in the listener's left ear.
+  win::AudioChunk mic_as_mono(const win::AudioChunk& c) {
+    if (!mic_downmix) {
+      return c;
+    }
+    const std::vector<float>& mono = mic_downmix->process(c.samples, c.frame_count);
+    win::AudioChunk out = c;
+    out.samples = mono.data();
+    out.frame_count = static_cast<int>(mono.size());
+    out.channels = 1;
+    return out;
+  }
+
   // Merged path: the mic becomes one more mixer source, so it lands in the
   // main track alongside game/app audio. The mixer only accepts its own
-  // format, hence the resampler for mics that do not run at the mix rate.
-  void submit_mic_to_mixer(const win::AudioChunk& c) {
+  // sample rate, hence the resampler for mics that do not run at the mix
+  // rate; spreading the mono fold across the mix channels is the mixer's job.
+  void submit_mic_to_mixer(const win::AudioChunk& chunk) {
+    const win::AudioChunk c = mic_as_mono(chunk);
     if (!mic_resampler) {
       mixer->submit(mic_source, c);
       return;
@@ -84,15 +104,16 @@ struct AudioPipeline::Impl {
 
   // Same rebase for the separate microphone track. Mic capture is a
   // continuous stream, so sample-count-derived pts stays gapless.
-  void encode_mic_on_timeline(const win::AudioChunk& c) {
+  void encode_mic_on_timeline(const win::AudioChunk& chunk) {
     const int64_t base = recorder->timeline_base_us();
     if (base < 0) {
       return;
     }
-    const int64_t pts = c.timestamp_us - base;
+    const int64_t pts = chunk.timestamp_us - base;
     if (pts < 0) {
       return;
     }
+    const win::AudioChunk c = mic_as_mono(chunk);
     mic_encoder->encode(c.samples, c.frame_count, pts);
   }
 };
@@ -172,10 +193,16 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
       return;
     }
 
+    // Everything downstream sees a single centred channel; see mic_as_mono().
+    if (cap->channels() > 1) {
+      im.mic_downmix = std::make_unique<MonoDownmixer>(cap->channels());
+      log::info("audio: folding the {}-channel microphone to centre", cap->channels());
+    }
+
     if (!settings.audio.microphone.separate_track) {
-      if (cap->sample_rate() != im.mix_rate || cap->channels() != im.mix_channels) {
+      if (cap->sample_rate() != im.mix_rate) {
         std::string res_error;
-        im.mic_resampler = media::AudioResampler::create(cap->sample_rate(), cap->channels(),
+        im.mic_resampler = media::AudioResampler::create(cap->sample_rate(), /*in_channels=*/1,
                                                          im.mix_rate, im.mix_channels, &res_error);
         if (!im.mic_resampler) {
           log::warn("audio: microphone disabled: {}", res_error);
@@ -191,7 +218,7 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const Settings& settings, D
 
     media::AudioEncoderConfig cfg;
     cfg.in_sample_rate = cap->sample_rate();
-    cfg.in_channels = cap->channels();
+    cfg.in_channels = 1;  // folded to mono above
     cfg.bitrate_kbps = settings.audio.bitrate_kbps;
     cfg.stream_kind = StreamKind::Microphone;
     std::string enc_error;

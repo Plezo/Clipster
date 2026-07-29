@@ -20,6 +20,7 @@ class SettingsWidget : public QWidget {
   QWidget* build_audio_tab();
   QWidget* build_games_tab();
   QWidget* build_hotkeys_tab();
+  QWidget* build_advanced_tab();
 
   Settings initial_;
 

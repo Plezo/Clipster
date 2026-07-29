@@ -7,6 +7,7 @@
 #include <functional>
 
 #include "clipster/win/audio_capture.hpp"
+#include "recorder.hpp"  // play_clip_saved_sound: Test must match a real save
 
 namespace clipster::gui {
 
@@ -83,6 +84,7 @@ SettingsWidget::SettingsWidget(const Settings& initial, QWidget* parent)
   tabs->addTab(build_audio_tab(), tr("Audio"));
   tabs->addTab(build_games_tab(), tr("Games"));
   tabs->addTab(build_hotkeys_tab(), tr("Hotkeys && Alerts"));
+  tabs->addTab(build_advanced_tab(), tr("Advanced"));  // after Audio: reads mic_enabled_
 
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
@@ -226,6 +228,9 @@ QWidget* SettingsWidget::build_audio_tab() {
 
   mic_enabled_ = new QCheckBox(tr("Record my microphone"));
   mic_enabled_->setChecked(initial_.audio.microphone.enabled);
+  mic_enabled_->setToolTip(
+      tr("Your voice is mixed into the clip's main audio track, so it plays "
+         "everywhere. Advanced settings can put it on its own track instead."));
   mic_form->addRow(QString(), mic_enabled_);
 
   mic_device_ = new QComboBox;
@@ -244,26 +249,10 @@ QWidget* SettingsWidget::build_audio_tab() {
   }
   mic_form->addRow(tr("Device:"), mic_device_);
 
-  mic_separate_track_ = new QCheckBox(tr("Keep my voice on a separate audio track"));
-  mic_separate_track_->setChecked(initial_.audio.microphone.separate_track);
-  mic_form->addRow(QString(), mic_separate_track_);
-
-  auto* mic_hint = new QLabel(
-      tr("Your voice is mixed into the clip's main audio track so it plays "
-         "everywhere. A separate track keeps it isolated for editing, but "
-         "most players — browsers, Discord, social uploads — only play the "
-         "first track, so your voice will be silent there."));
-  mic_hint->setStyleSheet("color: gray");
-  mic_hint->setWordWrap(true);
-  mic_form->addRow(QString(), mic_hint);
-
-  const auto update_mic_rows = [this] {
-    const bool on = mic_enabled_->isChecked();
-    mic_device_->setEnabled(on);
-    mic_separate_track_->setEnabled(on);
-  };
-  connect(mic_enabled_, &QCheckBox::toggled, this, update_mic_rows);
-  update_mic_rows();
+  // The separate-track switch lives in Advanced: it is a trade-off nobody
+  // should have to think about to get their voice into a clip.
+  connect(mic_enabled_, &QCheckBox::toggled, mic_device_, &QWidget::setEnabled);
+  mic_device_->setEnabled(mic_enabled_->isChecked());
 
   layout->addWidget(mic_group);
 
@@ -322,10 +311,9 @@ QWidget* SettingsWidget::build_hotkeys_tab() {
   controller_ = new QLineEdit(QString::fromStdString(initial_.hotkeys.controller_save_clip));
   controller_->setPlaceholderText(tr("e.g. Back+RB (empty = disabled)"));
   form->addRow(tr("Controller combo:"), controller_);
-  auto* pad_hint =
-      new QLabel(tr("Buttons: A B X Y LB RB LS RS Back Start DpadUp/Down/Left/Right"));
-  pad_hint->setStyleSheet("color: gray");
-  form->addRow(QString(), pad_hint);
+  controller_->setToolTip(
+      tr("Buttons: A B X Y LB RB LS RS Back Start DpadUp DpadDown DpadLeft "
+         "DpadRight — combine with +, e.g. Back+RB."));
 
   sound_ = new QCheckBox(tr("Play a sound when a clip is saved"));
   sound_->setChecked(initial_.notifications.sound_enabled);
@@ -343,19 +331,44 @@ QWidget* SettingsWidget::build_hotkeys_tab() {
     }
   });
   connect(test, &QPushButton::clicked, this, [this] {
-    const QString file = sound_file_->text();
-    if (!file.isEmpty()) {
-      PlaySoundW(reinterpret_cast<const wchar_t*>(file.utf16()), nullptr,
-                 SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
-    } else {
-      MessageBeep(MB_OK);
-    }
+    // Play it exactly the way saving a clip does — an empty box means the
+    // bundled chime, not a system beep, and a bad path falls back the same
+    // way it will in real use.
+    Settings preview = initial_;
+    preview.notifications.sound_enabled = true;
+    preview.notifications.sound_file = sound_file_->text().trimmed().toStdString();
+    app::play_clip_saved_sound(preview);
   });
   auto* row = new QHBoxLayout;
   row->addWidget(sound_file_, 1);
   row->addWidget(browse);
   row->addWidget(test);
   form->addRow(tr("Custom sound:"), row);
+  return page;
+}
+
+QWidget* SettingsWidget::build_advanced_tab() {
+  auto* page = new QWidget;
+  auto* layout = new QVBoxLayout(page);
+
+  auto* mic_group = new QGroupBox(tr("Microphone"));
+  auto* mic_form = new QFormLayout(mic_group);
+
+  mic_separate_track_ = new QCheckBox(tr("Keep my voice on a separate audio track"));
+  mic_separate_track_->setChecked(initial_.audio.microphone.separate_track);
+  mic_separate_track_->setToolTip(
+      tr("Writes the microphone as a second track titled \"Microphone\" "
+         "instead of mixing it in, so an editor can rebalance or mute your "
+         "voice. Most players — browsers, Discord, social uploads — play "
+         "only the first track, so your voice is silent in them."));
+  mic_form->addRow(QString(), mic_separate_track_);
+  layout->addWidget(mic_group);
+
+  // Meaningless without a microphone; mirrors the Audio tab's switch.
+  connect(mic_enabled_, &QCheckBox::toggled, mic_separate_track_, &QWidget::setEnabled);
+  mic_separate_track_->setEnabled(mic_enabled_->isChecked());
+
+  layout->addStretch();
   return page;
 }
 
