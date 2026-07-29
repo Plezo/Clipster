@@ -39,7 +39,14 @@ Recorder::Recorder(Settings settings, std::string game_name, std::function<void(
       game_name_(std::move(game_name)),
       on_fatal_(std::move(on_fatal)),
       ring_(std::chrono::seconds(settings_.clip.default_length_seconds)),
-      frame_interval_us_(1'000'000 / settings_.recording.fps) {}
+      frame_interval_us_(1'000'000 / settings_.recording.fps) {
+  // Starts running at construction so a window that never produces a first
+  // frame reads as stalled too, not as "0 s since the last frame".
+  last_frame_at_us_.store(std::chrono::duration_cast<std::chrono::microseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count(),
+                          std::memory_order_relaxed);
+}
 
 void Recorder::on_frame(const win::CapturedFrame& frame) {
   if (first_pts_us_ < 0) {
@@ -164,9 +171,6 @@ void Recorder::save_clip(std::chrono::seconds length) {
 
 int64_t Recorder::seconds_since_last_frame() const {
   const int64_t last = last_frame_at_us_.load(std::memory_order_relaxed);
-  if (last < 0) {
-    return 0;
-  }
   const int64_t now = std::chrono::duration_cast<std::chrono::microseconds>(
                           std::chrono::steady_clock::now().time_since_epoch())
                           .count();
