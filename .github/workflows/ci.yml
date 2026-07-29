@@ -25,8 +25,9 @@ jobs:
   # Full build: core + FFmpeg media layer + Windows platform layer + CLI.
   windows:
     runs-on: windows-latest
-    # A doomed dependency build used to burn 2.5 h before failing; fail fast.
-    timeout-minutes: 120
+    # Backstop only. A cold Qt+FFmpeg build runs ~2.5 h; the archive cache
+    # below is what makes the steady state fast.
+    timeout-minutes: 180
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       # Only release dependencies are ever linked (the preset builds
@@ -57,11 +58,11 @@ jobs:
       # a plain directory cached by actions/cache. vcpkg's own `x-gha`
       # provider talks to the retired Actions Cache v1 endpoint on this
       # pinned vcpkg, so it never hit and every run rebuilt Qt from source.
-      - name: Cache vcpkg dependency archives
-        uses: actions/cache@v4
+      - name: Restore vcpkg dependency archives
+        uses: actions/cache/restore@v4
         with:
           path: C:\vcpkg-cache
-          key: vcpkg-${{ env.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json', '.github/workflows/ci.yml') }}
+          key: vcpkg-${{ env.VCPKG_TRIPLET }}-${{ github.run_id }}
           restore-keys: vcpkg-${{ env.VCPKG_TRIPLET }}-
 
       # The windows-ci preset uses Ninja so the build works with whatever
@@ -103,6 +104,17 @@ jobs:
             Write-Output "::error title=CMake configure failed::$tail"
             exit 1
           }
+
+      # Saved even when the job fails or times out — vcpkg archives are
+      # per-port, so a run that only got halfway still lets the next one
+      # pick up where it left off. actions/cache's own post step is skipped
+      # on cancellation, which is exactly when a cold build needs it.
+      - name: Save vcpkg dependency archives
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: C:\vcpkg-cache
+          key: vcpkg-${{ env.VCPKG_TRIPLET }}-${{ github.run_id }}
 
       - name: Upload dependency build logs on failure
         if: failure()
