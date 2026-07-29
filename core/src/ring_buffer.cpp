@@ -29,21 +29,36 @@ void SegmentRingBuffer::push(EncodedPacket packet) {
     Gop gop;
     gop.start_us = packet.pts_us;
     gop.end_us = packet.pts_us;
+    gop.video_end_us = packet.pts_us;
     gops_.push_back(std::move(gop));
   }
 
   Gop& gop = gops_.back();
   gop.end_us = std::max(gop.end_us, packet.pts_us);
+  if (packet.stream == StreamKind::Video) {
+    gop.video_end_us = std::max(gop.video_end_us, packet.pts_us);
+  }
   gop.bytes += packet.size();
   total_bytes_ += packet.size();
+  latest_us_ = std::max(latest_us_, packet.pts_us);
   gop.packets.push_back(std::move(packet));
 
   evict_locked();
 }
 
 void SegmentRingBuffer::evict_locked() {
+  const int64_t cutoff_us = latest_us_ - capacity_us_;
+
   // Drop the oldest GOP while the remaining ones still cover the window.
-  while (gops_.size() > 1 && gops_.back().end_us - gops_[1].start_us >= capacity_us_) {
+  while (gops_.size() > 1 && gops_[1].start_us <= cutoff_us) {
+    total_bytes_ -= gops_.front().bytes;
+    gops_.pop_front();
+  }
+
+  // Then drop any GOP whose video has aged out completely — the last one
+  // included. When capture stalls, audio alone keeps arriving; without this
+  // the final GOP (and every second of audio since) would live forever.
+  while (!gops_.empty() && gops_.front().video_end_us < cutoff_us) {
     total_bytes_ -= gops_.front().bytes;
     gops_.pop_front();
   }
@@ -55,7 +70,7 @@ std::vector<EncodedPacket> SegmentRingBuffer::snapshot(std::chrono::seconds dura
     return {};
   }
 
-  const int64_t cutoff_us = gops_.back().end_us - duration.count() * kMicros;
+  const int64_t cutoff_us = latest_us_ - duration.count() * kMicros;
 
   // Walk back to the newest GOP that starts at or before the cutoff so the
   // clip covers at least the requested duration.
@@ -91,6 +106,7 @@ void SegmentRingBuffer::clear() {
   std::lock_guard lock(mutex_);
   gops_.clear();
   total_bytes_ = 0;
+  latest_us_ = 0;
 }
 
 }  // namespace clipster

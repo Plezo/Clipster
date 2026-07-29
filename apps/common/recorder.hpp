@@ -67,6 +67,9 @@ class Recorder {
  private:
   std::filesystem::path build_output_path(const Settings& settings) const;
 
+  // 0 when no frame has ever arrived.
+  int64_t seconds_since_last_frame() const;
+
   Settings settings_copy() const;
 
   mutable std::mutex settings_mutex_;
@@ -85,6 +88,9 @@ class Recorder {
   int64_t next_due_us_ = 0;
   const int64_t frame_interval_us_;
   std::atomic<uint64_t> frames_encoded_{0};
+  // steady_clock µs of the last frame handed to the encoder, for telling
+  // "no frames yet" apart from "the window stopped rendering".
+  std::atomic<int64_t> last_frame_at_us_{-1};
   std::mutex writers_mutex_;
   std::vector<std::thread> writers_;
 };

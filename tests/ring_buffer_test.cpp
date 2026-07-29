@@ -89,6 +89,54 @@ TEST(audio_packets_ride_along_with_gops) {
   CHECK_EQ(rb.buffered_bytes(), 2200u);
 }
 
+// A captured window can stop producing frames while the game keeps playing
+// audio (minimised, or a launcher window replaced by the real game window).
+// Audio must not keep the last GOP — and every second of audio since —
+// alive: that is what turned a 60 s clip into a 2 h 11 m one.
+TEST(audio_after_a_capture_stall_does_not_grow_the_buffer) {
+  SegmentRingBuffer rb(10s);
+  feed_video(rb, 0, 6);
+  CHECK(rb.buffered_bytes() > 0u);
+
+  // Frames stop at 6 s; audio keeps arriving for another ten minutes.
+  for (int64_t ms = 6'000; ms < 606'000; ms += 20) {
+    rb.push(packet(StreamKind::Audio, ms * 1000, false, 400));
+  }
+
+  CHECK_EQ(rb.buffered_bytes(), 0u);  // the stale video aged out, audio with it
+  CHECK(rb.snapshot(10s).empty());
+  CHECK(rb.buffered_duration() <= 1s);
+}
+
+TEST(audio_during_a_short_stall_still_rides_along) {
+  SegmentRingBuffer rb(10s);
+  feed_video(rb, 0, 6);
+  for (int64_t ms = 6'000; ms < 11'000; ms += 20) {  // 5 s stall, inside the window
+    rb.push(packet(StreamKind::Audio, ms * 1000, false, 400));
+  }
+
+  const auto packets = rb.snapshot(10s);
+  CHECK(!packets.empty());
+  CHECK(packets.front().keyframe);
+  CHECK(packets.back().pts_us >= 10'900 * 1000);  // the audio is still there
+  CHECK(rb.buffered_duration() <= 12s);
+}
+
+TEST(recovers_when_frames_come_back_after_a_long_stall) {
+  SegmentRingBuffer rb(10s);
+  feed_video(rb, 0, 6);
+  for (int64_t ms = 6'000; ms < 60'000; ms += 20) {
+    rb.push(packet(StreamKind::Audio, ms * 1000, false, 400));
+  }
+  CHECK_EQ(rb.buffered_bytes(), 0u);
+
+  feed_video(rb, 60 * kSec, 4);
+  const auto packets = rb.snapshot(10s);
+  CHECK(!packets.empty());
+  CHECK(packets.front().keyframe);
+  CHECK(packets.front().pts_us >= 60 * kSec);
+}
+
 TEST(clear_empties_buffer) {
   SegmentRingBuffer rb(60s);
   feed_video(rb, 0, 4);
