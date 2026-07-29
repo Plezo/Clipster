@@ -31,9 +31,14 @@ jobs:
     needs: precheck
     if: needs.precheck.outputs.skip != 'true'
     runs-on: windows-latest
+    timeout-minutes: 120
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
-      VCPKG_BINARY_SOURCES: clear;x-gha,readwrite
+      # Release-only dependencies, and vcpkg's heavy trees kept off the
+      # small workspace drive — see ci.yml for why.
+      VCPKG_TRIPLET: x64-windows-release
+      VCPKG_DOWNLOADS: C:\vcpkg-downloads
+      VCPKG_BINARY_SOURCES: clear;files,C:\vcpkg-cache,readwrite
     steps:
       - uses: actions/checkout@v4
 
@@ -63,12 +68,15 @@ jobs:
         run: ${{ github.workspace }}/vcpkg/bootstrap-vcpkg.bat
         shell: cmd
 
-      - name: Enable vcpkg GHA binary cache
-        uses: actions/github-script@v7
+      # Shares the archive cache CI fills (same key prefix), so a release
+      # build normally installs prebuilt dependencies instead of compiling
+      # Qt again. See ci.yml.
+      - name: Cache vcpkg dependency archives
+        uses: actions/cache@v4
         with:
-          script: |
-            for (const v of ['ACTIONS_CACHE_URL', 'ACTIONS_RESULTS_URL', 'ACTIONS_RUNTIME_TOKEN'])
-              core.exportVariable(v, process.env[v] || '');
+          path: C:\vcpkg-cache
+          key: vcpkg-${{ env.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json', '.github/workflows/ci.yml') }}
+          restore-keys: vcpkg-${{ env.VCPKG_TRIPLET }}-
 
       # Ninja works with whatever Visual Studio the runner ships (see ci.yml).
       - name: Set up MSVC environment
@@ -94,7 +102,9 @@ jobs:
           cmake --version
           where.exe cl
           cmake --preset windows-ci `
-            -D "VCPKG_INSTALL_OPTIONS=--clean-after-build" `
+            -D "VCPKG_TARGET_TRIPLET=$env:VCPKG_TRIPLET" `
+            -D "VCPKG_HOST_TRIPLET=$env:VCPKG_TRIPLET" `
+            -D "VCPKG_INSTALL_OPTIONS=--clean-after-build;--x-buildtrees-root=C:/vcpkg-bt" `
             -D "CMAKE_MAKE_PROGRAM=$ninja" 2>&1 |
             Tee-Object configure.log
           if ($LASTEXITCODE -ne 0) {
@@ -108,7 +118,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vcpkg-failure-logs
-          path: vcpkg/buildtrees/**/*.log
+          path: C:\vcpkg-bt\**\*.log
           if-no-files-found: ignore
 
       - name: Build
