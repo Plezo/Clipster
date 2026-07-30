@@ -57,4 +57,6 @@ Name: "{group}\Clipster"; Filename: "{app}\Clipster.exe"
 Name: "{autodesktop}\Clipster"; Filename: "{app}\Clipster.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Clipster.exe"; Description: "{cm:LaunchProgram,Clipster}"; Flags: nowait postinstall skipifsilent
+; No skipifsilent: the in-app updater runs setup with /SILENT and relies on
+; this entry to bring Clipster back afterwards.
+Filename: "{app}\Clipster.exe"; Description: "{cm:LaunchProgram,Clipster}"; Flags: nowait postinstall

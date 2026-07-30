@@ -2,7 +2,11 @@
 
 #include <QtWidgets>
 
+#include <functional>
+#include <optional>
+
 #include "clipster/settings.hpp"
+#include "updater.hpp"
 
 namespace clipster::gui {
 
@@ -14,6 +18,10 @@ class SettingsWidget : public QWidget {
 
   Settings collect() const;
 
+  // Asked to shut down cleanly once an update installer has been started,
+  // so the recorder finishes its clips instead of being force-killed.
+  std::function<void()> request_quit;
+
  private:
   QWidget* build_recording_tab();
   QWidget* build_output_tab();
@@ -21,6 +29,11 @@ class SettingsWidget : public QWidget {
   QWidget* build_games_tab();
   QWidget* build_hotkeys_tab();
   QWidget* build_advanced_tab();
+  QWidget* build_about_tab();
+
+  void run_update_check();
+  void show_update(const UpdateInfo& info);
+  void start_update();
 
   Settings initial_;
 
@@ -48,6 +61,13 @@ class SettingsWidget : public QWidget {
   QLineEdit* controller_ = nullptr;
   QCheckBox* sound_ = nullptr;
   QLineEdit* sound_file_ = nullptr;
+
+  Updater* updater_ = nullptr;
+  QPushButton* check_update_ = nullptr;
+  QPushButton* get_update_ = nullptr;
+  QLabel* update_status_ = nullptr;
+  QProgressBar* update_progress_ = nullptr;
+  std::optional<UpdateInfo> pending_update_;
 };
 
 }  // namespace clipster::gui
