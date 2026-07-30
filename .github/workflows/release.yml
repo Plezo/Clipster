@@ -31,7 +31,7 @@ jobs:
     needs: precheck
     if: needs.precheck.outputs.skip != 'true'
     runs-on: windows-latest
-    timeout-minutes: 120
+    timeout-minutes: 180
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       # Release-only dependencies, and vcpkg's heavy trees kept off the
@@ -71,11 +71,11 @@ jobs:
       # Shares the archive cache CI fills (same key prefix), so a release
       # build normally installs prebuilt dependencies instead of compiling
       # Qt again. See ci.yml.
-      - name: Cache vcpkg dependency archives
-        uses: actions/cache@v4
+      - name: Restore vcpkg dependency archives
+        uses: actions/cache/restore@v4
         with:
           path: C:\vcpkg-cache
-          key: vcpkg-${{ env.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json', '.github/workflows/ci.yml') }}
+          key: vcpkg-${{ env.VCPKG_TRIPLET }}-${{ github.run_id }}
           restore-keys: vcpkg-${{ env.VCPKG_TRIPLET }}-
 
       # Ninja works with whatever Visual Studio the runner ships (see ci.yml).
@@ -112,6 +112,14 @@ jobs:
             Write-Output "::error title=CMake configure failed::$tail"
             exit 1
           }
+
+      # See ci.yml: partial progress must survive a timeout.
+      - name: Save vcpkg dependency archives
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: C:\vcpkg-cache
+          key: vcpkg-${{ env.VCPKG_TRIPLET }}-${{ github.run_id }}
 
       - name: Upload dependency build logs on failure
         if: failure()
