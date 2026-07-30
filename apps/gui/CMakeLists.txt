@@ -40,12 +40,33 @@ add_custom_command(TARGET clipster_gui POST_BUILD
 # plugin could be initialized"). Deploy the windeployqt-style layout.
 set(_qt_plugin_src
   "$<IF:$<CONFIG:Debug>,${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/Qt6/plugins,${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/Qt6/plugins>")
-# tls carries the Schannel backend QNetworkAccessManager needs for https;
+# tls carries the TLS backends QNetworkAccessManager needs for https;
 # multimedia carries the ffmpeg backend the Clips-tab player needs.
 foreach(_plugin_dir platforms styles imageformats tls multimedia)
   add_custom_command(TARGET clipster_gui POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
       "${_qt_plugin_src}/${_plugin_dir}"
       "$<TARGET_FILE_DIR:clipster_gui>/${_plugin_dir}"
+  )
+endforeach()
+
+# Qt prefers the OpenSSL TLS backend when its plugin is present, and that
+# plugin is loaded at runtime — so vcpkg's applocal step never sees its
+# dependency on libssl and copies only libcrypto (which Qt6Network links
+# directly). The half-deployed backend then fails to load without Qt
+# falling back to Schannel, and every https request dies with "TLS
+# initialization failed" — which is why the in-app update check has been
+# silently skipped in every packaged build. Globbed, so an OpenSSL major
+# bump does not break the build.
+file(GLOB _openssl_runtime RELATIVE
+  "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin"
+  "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin/libssl-*.dll")
+set(_openssl_bin
+  "$<IF:$<CONFIG:Debug>,${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/debug/bin,${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin>")
+foreach(_dll ${_openssl_runtime})
+  add_custom_command(TARGET clipster_gui POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      "${_openssl_bin}/${_dll}"
+      "$<TARGET_FILE_DIR:clipster_gui>"
   )
 endforeach()
