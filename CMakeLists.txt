@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(clipster
-  VERSION 0.4.1
+  VERSION 0.4.2
   DESCRIPTION "Lightweight background game replay buffer"
   LANGUAGES CXX
 )
