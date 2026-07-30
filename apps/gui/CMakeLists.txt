@@ -8,6 +8,7 @@ add_executable(clipster_gui WIN32
   main_window.cpp
   settings_widget.cpp
   clips_page.cpp
+  updater.cpp
   clipster.rc
 )
 

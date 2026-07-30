@@ -1,5 +1,7 @@
 #include "settings_widget.hpp"
 
+#include "updater.hpp"
+
 #include <windows.h>
 
 #include <mmsystem.h>
@@ -85,6 +87,7 @@ SettingsWidget::SettingsWidget(const Settings& initial, QWidget* parent)
   tabs->addTab(build_games_tab(), tr("Games"));
   tabs->addTab(build_hotkeys_tab(), tr("Hotkeys && Alerts"));
   tabs->addTab(build_advanced_tab(), tr("Advanced"));  // after Audio: reads mic_enabled_
+  tabs->addTab(build_about_tab(), tr("About"));
 
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
@@ -370,6 +373,113 @@ QWidget* SettingsWidget::build_advanced_tab() {
 
   layout->addStretch();
   return page;
+}
+
+QWidget* SettingsWidget::build_about_tab() {
+  auto* page = new QWidget;
+  auto* layout = new QVBoxLayout(page);
+  updater_ = new Updater(this);
+
+  layout->addWidget(new QLabel(tr("<b>Clipster %1</b>").arg(Updater::current_version())));
+  auto* repo = new QLabel(
+      tr("<a href=\"https://github.com/Plezo/Clipster\">github.com/Plezo/Clipster</a>"));
+  repo->setOpenExternalLinks(true);
+  layout->addWidget(repo);
+
+  auto* group = new QGroupBox(tr("Updates"));
+  auto* g = new QVBoxLayout(group);
+
+  auto* row = new QHBoxLayout;
+  check_update_ = new QPushButton(tr("Check for updates"));
+  get_update_ = new QPushButton(tr("Update now"));
+  get_update_->setVisible(false);
+  row->addWidget(check_update_);
+  row->addWidget(get_update_);
+  row->addStretch();
+  g->addLayout(row);
+
+  update_status_ = new QLabel(tr("Clipster also checks when it starts."));
+  update_status_->setOpenExternalLinks(true);
+  update_status_->setWordWrap(true);
+  g->addWidget(update_status_);
+
+  update_progress_ = new QProgressBar;
+  update_progress_->setVisible(false);
+  g->addWidget(update_progress_);
+
+  layout->addWidget(group);
+  layout->addStretch();
+
+  connect(check_update_, &QPushButton::clicked, this, [this] { run_update_check(); });
+  connect(get_update_, &QPushButton::clicked, this, [this] { start_update(); });
+  return page;
+}
+
+void SettingsWidget::run_update_check() {
+  check_update_->setEnabled(false);
+  get_update_->setVisible(false);
+  update_status_->setText(tr("Checking…"));
+  updater_->check(
+      [this](std::optional<UpdateInfo> found) {
+        check_update_->setEnabled(true);
+        if (!found) {
+          update_status_->setText(
+              tr("You are on the latest version (%1).").arg(Updater::current_version()));
+          return;
+        }
+        show_update(*found);
+      },
+      [this](QString error) {
+        check_update_->setEnabled(true);
+        update_status_->setText(tr("Could not check for updates: %1").arg(error));
+      });
+}
+
+void SettingsWidget::show_update(const UpdateInfo& info) {
+  pending_update_ = info;
+  update_status_->setText(
+      tr("<b>%1 is available</b> — you have %2. <a href=\"%3\">What's new</a>")
+          .arg(info.tag.toHtmlEscaped(), Updater::current_version(),
+               info.page_url.toHtmlEscaped()));
+  // The portable build cannot install over itself: where its folder should
+  // go is the user's call, so send them to the download instead.
+  const bool installable = !info.installer_url.isEmpty() && Updater::is_installed_build();
+  get_update_->setText(installable ? tr("Update now") : tr("Open download page"));
+  get_update_->setVisible(true);
+}
+
+void SettingsWidget::start_update() {
+  if (!pending_update_) {
+    return;
+  }
+  if (pending_update_->installer_url.isEmpty() || !Updater::is_installed_build()) {
+    QDesktopServices::openUrl(QUrl(pending_update_->page_url));
+    return;
+  }
+  get_update_->setEnabled(false);
+  update_progress_->setRange(0, 100);
+  update_progress_->setValue(0);
+  update_progress_->setVisible(true);
+  update_status_->setText(tr("Downloading %1…").arg(pending_update_->tag.toHtmlEscaped()));
+  updater_->install(
+      *pending_update_,
+      [this](qint64 received, qint64 total) {
+        if (total > 0) {
+          update_progress_->setValue(static_cast<int>(received * 100 / total));
+        }
+      },
+      [this] {
+        update_progress_->setValue(100);
+        update_status_->setText(tr("Installing — Clipster will close and reopen."));
+        if (request_quit) {
+          request_quit();
+        }
+      },
+      [this](QString error) {
+        get_update_->setEnabled(true);
+        update_progress_->setVisible(false);
+        update_status_->setText(tr("Update failed: %1").arg(error));
+      });
 }
 
 Settings SettingsWidget::collect() const {
