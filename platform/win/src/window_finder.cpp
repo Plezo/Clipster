@@ -79,4 +79,12 @@ std::optional<WindowInfo> find_window_by_pid(DWORD pid) {
   return std::nullopt;
 }
 
+std::optional<WindowInfo> foreground_window() {
+  HWND hwnd = GetForegroundWindow();
+  if (!hwnd || !is_capturable(hwnd)) {
+    return std::nullopt;
+  }
+  return make_info(hwnd);
+}
+
 }  // namespace clipster::win

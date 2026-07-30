@@ -13,6 +13,11 @@ namespace clipster::app {
 namespace {
 constexpr auto kControlTick = std::chrono::seconds(1);
 constexpr auto kFindWindowTimeout = std::chrono::seconds(90);
+// How long a captured window may go without a frame before the session is
+// treated as stalled. Long enough to sit through loading screens and
+// fullscreen transitions, short enough to catch a launcher handoff before
+// the clip buffer runs dry.
+constexpr auto kStallTimeout = std::chrono::seconds(15);
 }  // namespace
 
 std::shared_ptr<const GameMatcher> build_matcher(const Settings& settings) {
@@ -198,6 +203,9 @@ void SessionManager::control_loop() {
       try_begin_capture();
       lock.lock();
     }
+    lock.unlock();
+    check_stalled_session();
+    lock.lock();
   }
   lock.unlock();
   CoUninitialize();
@@ -316,6 +324,7 @@ void SessionManager::try_begin_capture() {
 
   auto session = std::make_unique<Session>();
   session->pid = pid;
+  session->hwnd = window->hwnd;
   session->exe_path = exe;
   session->game_name = game;
   session->recorder = std::make_unique<Recorder>(
@@ -354,6 +363,78 @@ void SessionManager::try_begin_capture() {
   if (callbacks_.on_recording_started) {
     callbacks_.on_recording_started(game);
   }
+}
+
+// A window that has stopped producing frames is not necessarily lost: a
+// minimised game keeps its window and comes back. A launcher window that
+// the real game window replaced never does, and that is what silently
+// recorded two hours of audio over 0.7 s of video.
+//
+// So a stall only ends the session when there is somewhere better to go:
+// the same process showing a different window now, or another whitelisted
+// game in the foreground — what the user is actually looking at. Otherwise
+// the session stays put and simply says so once.
+void SessionManager::check_stalled_session() {
+  DWORD pid = 0;
+  HWND hwnd = nullptr;
+  std::string exe;
+  std::string game;
+  int64_t idle_s = 0;
+  {
+    std::lock_guard lock(session_mutex_);
+    if (!session_) {
+      stall_warned_ = false;
+      return;
+    }
+    idle_s = session_->recorder->seconds_since_last_frame();
+    pid = session_->pid;
+    hwnd = session_->hwnd;
+    exe = session_->exe_path;
+    game = session_->game_name;
+  }
+  if (idle_s < kStallTimeout.count()) {
+    stall_warned_ = false;
+    return;
+  }
+  if (!stall_warned_) {
+    stall_warned_ = true;
+    log::warn("{} has produced no frames for {} s — minimised, or the game moved to "
+              "another window",
+              game, idle_s);
+  }
+
+  // Same process, new window: the splash or launcher window we attached to
+  // is still alive (so nothing fired WindowClosed) but no longer the one
+  // being drawn.
+  if (const auto current = win::find_window_by_pid(pid); current && current->hwnd != hwnd) {
+    log::info("{} is drawing a different window now — re-attaching", game);
+    stop_session(/*game_exited=*/false);
+    add_candidate(pid, exe);
+    return;
+  }
+
+  // Another whitelisted game in the foreground: the launcher handed off to
+  // the real game process. Only the foreground window qualifies, so a game
+  // idling in the background never steals the session.
+  const auto front = win::foreground_window();
+  if (!front || front->pid == pid) {
+    return;
+  }
+  std::string front_exe;
+  {
+    std::lock_guard lock(running_mutex_);
+    for (const RunningProcess& p : running_) {
+      if (p.pid == front->pid) {
+        front_exe = p.exe_path;
+        break;
+      }
+    }
+  }
+  if (front_exe.empty()) {
+    return;  // not a game we record
+  }
+  log::info("switching to the game in the foreground: {}", front_exe);
+  post_event({Event::Kind::SwitchRequested, front->pid, std::move(front_exe)});
 }
 
 void SessionManager::stop_session(bool game_exited) {

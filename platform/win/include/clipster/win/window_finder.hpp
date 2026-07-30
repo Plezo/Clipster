@@ -26,4 +26,9 @@ std::optional<WindowInfo> find_window_by_title(const std::string& needle);
 // (by exe path) picks the pid to record.
 std::optional<WindowInfo> find_window_by_pid(DWORD pid);
 
+// The window the user is currently working in, if it is a plausible
+// capture target. Used to tell "the game moved to another window" apart
+// from "the game is minimised".
+std::optional<WindowInfo> foreground_window();
+
 }  // namespace clipster::win

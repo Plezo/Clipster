@@ -84,6 +84,7 @@ class SessionManager {
 
   struct Session {
     DWORD pid = 0;
+    HWND hwnd = nullptr;  // the captured window, for the stall watchdog
     std::string exe_path;
     std::string game_name;
     std::unique_ptr<Recorder> recorder;
@@ -106,6 +107,7 @@ class SessionManager {
   void handle_event(const Event& event);
   void add_candidate(DWORD pid, std::string exe_path);
   void try_begin_capture();
+  void check_stalled_session();
   void stop_session(bool game_exited);
   Settings settings_copy() const;
 
@@ -130,6 +132,7 @@ class SessionManager {
 
   // Control thread state (touched only on the control thread).
   std::vector<Candidate> candidates_;
+  bool stall_warned_ = false;  // so a long stall logs once, not every tick
 
   std::mutex events_mutex_;
   std::condition_variable events_cv_;

@@ -39,7 +39,14 @@ Recorder::Recorder(Settings settings, std::string game_name, std::function<void(
       game_name_(std::move(game_name)),
       on_fatal_(std::move(on_fatal)),
       ring_(std::chrono::seconds(settings_.clip.default_length_seconds)),
-      frame_interval_us_(1'000'000 / settings_.recording.fps) {}
+      frame_interval_us_(1'000'000 / settings_.recording.fps) {
+  // Starts running at construction so a window that never produces a first
+  // frame reads as stalled too, not as "0 s since the last frame".
+  last_frame_at_us_.store(std::chrono::duration_cast<std::chrono::microseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count(),
+                          std::memory_order_relaxed);
+}
 
 void Recorder::on_frame(const win::CapturedFrame& frame) {
   if (first_pts_us_ < 0) {
@@ -80,6 +87,10 @@ void Recorder::on_frame(const win::CapturedFrame& frame) {
 
   encoder_->encode_bgra(frame.data, frame.width, frame.height, frame.stride, pts);
   frames_encoded_.fetch_add(1, std::memory_order_relaxed);
+  last_frame_at_us_.store(std::chrono::duration_cast<std::chrono::microseconds>(
+                              std::chrono::steady_clock::now().time_since_epoch())
+                              .count(),
+                          std::memory_order_relaxed);
 }
 
 void Recorder::set_audio_info(AudioStreamInfo info) {
@@ -116,6 +127,7 @@ void Recorder::save_clip() {
 void Recorder::save_clip(std::chrono::seconds length) {
   if (!encoder_ready_.load(std::memory_order_acquire)) {
     log::warn("no frames captured yet — nothing to clip");
+    MessageBeep(MB_ICONERROR);
     return;
   }
   const Settings settings = settings_copy();
@@ -123,7 +135,14 @@ void Recorder::save_clip(std::chrono::seconds length) {
   media::ClipJob job;
   job.packets = ring_.snapshot(length);
   if (job.packets.empty()) {
-    log::warn("ring buffer is empty — nothing to clip");
+    // The buffer only empties out on a live session when frames stopped
+    // arriving long enough for the last of them to age out of the window —
+    // a minimised game, or a launcher window that the real game window
+    // replaced without the launcher's window being destroyed.
+    log::warn("nothing to clip — no frames for {} s; the captured window has stopped "
+              "rendering (pick the game again from the tray if it moved to another window)",
+              seconds_since_last_frame());
+    MessageBeep(MB_ICONERROR);
     return;
   }
   job.video = encoder_->stream_info();
@@ -148,6 +167,14 @@ void Recorder::save_clip(std::chrono::seconds length) {
       MessageBeep(MB_ICONERROR);
     }
   });
+}
+
+int64_t Recorder::seconds_since_last_frame() const {
+  const int64_t last = last_frame_at_us_.load(std::memory_order_relaxed);
+  const int64_t now = std::chrono::duration_cast<std::chrono::microseconds>(
+                          std::chrono::steady_clock::now().time_since_epoch())
+                          .count();
+  return (now - last) / 1'000'000;
 }
 
 void Recorder::finish() {

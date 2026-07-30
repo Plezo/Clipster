@@ -16,6 +16,12 @@ namespace clipster {
 // eviction and clip extraction always happen on independently decodable
 // boundaries. Memory is bounded by `capacity` seconds of media: once the
 // buffered duration exceeds it, whole GOPs are dropped from the front.
+//
+// The window is anchored on the newest packet of *any* stream, and a GOP is
+// dropped once its video has aged out of it — including the last one. Audio
+// keeps arriving when the captured window stops rendering (minimised game,
+// launcher window replaced by the real one), and without that rule the
+// trailing GOP would grow for as long as the session lasts.
 class SegmentRingBuffer {
  public:
   explicit SegmentRingBuffer(std::chrono::seconds capacity);
@@ -40,8 +46,9 @@ class SegmentRingBuffer {
  private:
   struct Gop {
     std::vector<EncodedPacket> packets;
-    int64_t start_us = 0;  // pts of the opening video keyframe
-    int64_t end_us = 0;    // highest pts seen in this GOP
+    int64_t start_us = 0;      // pts of the opening video keyframe
+    int64_t end_us = 0;        // highest pts seen in this GOP, any stream
+    int64_t video_end_us = 0;  // highest video pts, i.e. how fresh the frames are
     size_t bytes = 0;
   };
 
@@ -50,6 +57,7 @@ class SegmentRingBuffer {
   mutable std::mutex mutex_;
   std::deque<Gop> gops_;
   int64_t capacity_us_;
+  int64_t latest_us_ = 0;  // newest pts seen on any stream: "now" for the window
   size_t total_bytes_ = 0;
 };
 

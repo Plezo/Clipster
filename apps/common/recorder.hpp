@@ -64,6 +64,12 @@ class Recorder {
 
   std::string stats();
 
+  // How long the captured window has gone without producing a frame,
+  // counted from the start of the session until the first one arrives.
+  // Thread-safe — the session watchdog polls it to notice a window that
+  // has stopped rendering.
+  int64_t seconds_since_last_frame() const;
+
  private:
   std::filesystem::path build_output_path(const Settings& settings) const;
 
@@ -85,6 +91,9 @@ class Recorder {
   int64_t next_due_us_ = 0;
   const int64_t frame_interval_us_;
   std::atomic<uint64_t> frames_encoded_{0};
+  // steady_clock µs of the last frame handed to the encoder; seeded with
+  // the session's start time (see the constructor).
+  std::atomic<int64_t> last_frame_at_us_{0};
   std::mutex writers_mutex_;
   std::vector<std::thread> writers_;
 };
